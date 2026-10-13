@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "mockflow-ideaboard":
+    {
+      "url": "http://localhost:21193/mcp"
+    },
+    "mockflow-wireframepro":
+      {
+        "url": "http://localhost:21194/mcp"
+      }
+  }
+}
