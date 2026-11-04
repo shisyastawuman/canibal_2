@@ -1,3 +1,5 @@
+import type { Rules } from './rewards';
+
 export type Phase =
   | 'lobby'
   | 'reveal_prompt'
@@ -14,6 +16,8 @@ export type Phase =
 export interface Prompt {
   id: string;
   text: string;
+  /** Catalog section. Shown while choosing consignas, not during a match. */
+  type?: string;
 }
 
 export interface PlayerInMatch {
@@ -24,7 +28,8 @@ export interface PlayerInMatch {
   /** Unique place in the match order, 1 is the top. Null once fired. */
   rank: number | null;
   tokens: number;
-  specialTokens: number;
+  /** Gifted for the current vote only. Spent before influence tokens, then discarded. */
+  freeTokens: number;
   /** Current selection during `immunity_bid`. Secret until `reveal_bid`. */
   immunityBid: number;
   /** Current allocation during `vote`. Secret until `reveal_vote`. */
@@ -36,8 +41,8 @@ export interface PlayerInMatch {
 
 export interface VoteAllocation {
   nominee: string;
+  /** Tokens placed on this nominee. Free tokens are spent before influence tokens. */
   tokens: number;
-  specialTokens: number;
 }
 
 export interface BonusAllocation {
@@ -47,8 +52,8 @@ export interface BonusAllocation {
 
 export interface NomineeTotal {
   nominee: string;
+  /** Influence and free tokens voted, counted the same. */
   tokens: number;
-  specialTokens: number;
   bonus: number;
   total: number;
 }
@@ -64,8 +69,8 @@ export interface TokenAward {
 export interface Ballot {
   email: string;
   votes: VoteAllocation[];
-  /** Special tokens this player was given and did not put on a nominee. */
-  unusedSpecialTokens: number;
+  /** Free tokens this player was given and did not put on a nominee. */
+  unusedFreeTokens: number;
 }
 
 export interface VoteResults {
@@ -98,6 +103,8 @@ export interface Match {
   code: string;
   /** Secret id that lets the facilitator rejoin after a disconnection. */
   facilitatorId: string;
+  /** Reward and schedule numbers chosen when this match was created. */
+  rules: Rules;
   phase: Phase;
   /** 0 while in `lobby`. */
   round: number;
@@ -128,6 +135,7 @@ export type GameError =
   | 'roster_locked'
   | 'roster_size'
   | 'not_enough_prompts'
+  | 'invalid_rules'
   | 'unknown_player'
   | 'not_active'
   | 'invalid_bid'
@@ -138,7 +146,6 @@ export type GameError =
   | 'nominee_cannot_vote'
   | 'invalid_vote'
   | 'vote_exceeds_tokens'
-  | 'vote_exceeds_special_tokens'
   | 'last_round';
 
 export type Result<T = Match> = { ok: true; match: T } | { ok: false; error: GameError };

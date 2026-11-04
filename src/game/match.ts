@@ -1,7 +1,7 @@
+import { copyRules, rewards, rulesOf } from './rewards';
+import type { Rules } from './rewards';
 import { isValidRosterSize, roundCount } from './schedule';
 import type { Match, PlayerInMatch, Prompt, Result, Rng } from './types';
-
-export const STARTING_TOKENS = 5;
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 6;
@@ -28,10 +28,11 @@ export function isFacilitator(match: Match, facilitatorId: string): boolean {
   return match.facilitatorId === facilitatorId;
 }
 
-export function createMatch(promptOrder: Prompt[], rng: Rng): Match {
+export function createMatch(promptOrder: Prompt[], rng: Rng, rules: Rules = rewards): Match {
   return {
     code: randomString(rng, CODE_LENGTH),
     facilitatorId: randomString(rng, FACILITATOR_ID_LENGTH),
+    rules: copyRules(rules),
     phase: 'lobby',
     round: 0,
     prompt: null,
@@ -71,8 +72,8 @@ export function joinMatch(match: Match, name: string, email: string, rng: Rng): 
     email: key,
     status: 'active',
     rank,
-    tokens: STARTING_TOKENS,
-    specialTokens: 0,
+    tokens: rulesOf(match).startingInfluenceTokens,
+    freeTokens: 0,
     immunityBid: 0,
     votes: [],
     firedInRound: null,
@@ -88,7 +89,7 @@ export function revealFirstPrompt(match: Match, facilitatorId: string): Result {
 
   const p = match.players.length;
   if (!isValidRosterSize(p)) return { ok: false, error: 'roster_size' };
-  if (match.promptOrder.length < roundCount(p)) return { ok: false, error: 'not_enough_prompts' };
+  if (match.promptOrder.length < roundCount(p, rulesOf(match))) return { ok: false, error: 'not_enough_prompts' };
 
   return {
     ok: true,

@@ -56,6 +56,6 @@ describe('a full match (US-6.1)', () => {
     const firedPlayers = match.players.filter((p) => p.status === 'fired');
     const winnerTokens = findPlayer(match, firedWinner?.email ?? '')?.tokens ?? -1;
     expect(firedPlayers.every((p) => p.tokens <= winnerTokens)).toBe(true);
-    expect(firedPlayers.every((p) => p.specialTokens === 0)).toBe(true);
+    expect(firedPlayers.every((p) => p.freeTokens === 0)).toBe(true);
   });
 });

@@ -1,0 +1,19 @@
+{
+  "note": "Defaults for a new game. The facilitator can change every number when creating that game.",
+  "startingInfluenceTokens": 5,
+  "facilitatorBonusTokens": 5,
+  "freeTokensForActiveVoters": 1,
+  "freeTokensForFiredVoters": 3,
+  "nomineesPerRound": 3,
+  "rewardedSurvivors": 2,
+  "survivorRankPlaces": 2,
+  "survivorInfluenceTokens": 3,
+  "extraTokensForVotingASurvivor": 2,
+  "extraTokensForTopVoter": 1,
+  "activePlayersWhoWin": 2,
+  "firedWinnerBands": [
+    { "rosterUpTo": 24, "seats": 1 },
+    { "rosterUpTo": 42, "seats": 2 },
+    { "rosterUpTo": 60, "seats": 3 }
+  ]
+}

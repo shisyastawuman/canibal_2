@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { setImmunityBid, setVote, speakingOrder, viewForPlayer } from '../game';
+import { nominatesAllActive, rankingOrder, rulesOf, speakingOrder, survivorsThisRound, viewForPlayer } from '../game';
 import type { PlayerInMatch, PlayerView, TokenAward } from '../game';
-import { registerPlayer, updateMatch } from '../session';
-import { ClockRead, Header } from './chrome';
-import { errorText, isLastRound, nameOf, rankLabel, roundChip, slots } from './format';
+import { placeBid, placeVote, registerPlayer } from '../session';
+import { ClockRead, Header, Missing, PlayerName } from './chrome';
+import { actionError, freeTokenLabel, nameOf, rankLabel, roundChip, slots, tokenBounds, tokenLabel, winnerRuleText } from './format';
 import { useAutoClose, useNow, usePlayer, useSession } from './useSession';
-import { Missing } from './chrome';
 
 export function PlayerMatch({ code }: { code: string }) {
   const session = useSession();
@@ -14,7 +13,8 @@ export function PlayerMatch({ code }: { code: string }) {
   const [returning, setReturning] = useState(false);
   useAutoClose(match);
   const now = useNow();
-  if (!match) return <Missing />;
+  if (session.missing[code]) return <Missing />;
+  if (!match) return <p className="panel">{session.offline ? 'Sin conexión. Reintentando…' : 'Cargando…'}</p>;
 
   const joined = identity !== null && match.players.some((player) => player.email === identity.email);
   if (!joined) {
@@ -37,8 +37,7 @@ function Register({ code }: { code: string }) {
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          const result = registerPlayer(code, name, email);
-          setError(result.ok ? '' : errorText(result.error));
+          void registerPlayer(code, name, email).then((result) => setError(result.ok ? '' : actionError(result.error)));
         }}
       >
         <label className="field" htmlFor="nombre">
@@ -72,8 +71,7 @@ function Closed({ code, returning, onReturn }: { code: string; returning: boolea
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            const result = registerPlayer(code, 'Jugador', email);
-            setError(result.ok ? '' : errorText(result.error));
+            void registerPlayer(code, 'Jugador', email).then((result) => setError(result.ok ? '' : actionError(result.error)));
           }}
         >
           <label className="field" htmlFor="volver">
@@ -97,48 +95,48 @@ function Closed({ code, returning, onReturn }: { code: string; returning: boolea
 function Screens({ view, now }: { view: PlayerView; now: number }) {
   const me = view.me;
   if (!me) return <Missing />;
-  const chip = roundChip(view.phase, view.round, view.rosterSize);
+  return (
+    <>
+      <Header chip={roundChip(view.phase, view.round, view.rosterSize, rulesOf(view))} />
+      <Status view={view} me={me} />
+      <Phase view={view} me={me} now={now} />
+    </>
+  );
+}
+
+function Phase({ view, me, now }: { view: PlayerView; me: PlayerInMatch; now: number }) {
   if (view.phase === 'victory') return <Victory view={view} me={me} />;
   if (me.status === 'fired' && (view.phase === 'reveal_prompt' || view.phase === 'immunity_bid')) {
-    return <StarWait view={view} me={me} now={now} chip={chip} />;
+    return <StarWait view={view} now={now} />;
   }
   if (view.phase === 'lobby') return <Lobby view={view} me={me} />;
-  if (view.phase === 'reveal_prompt') return <PromptShown view={view} me={me} chip={chip} />;
-  if (view.phase === 'immunity_bid') return <Bid view={view} me={me} now={now} chip={chip} />;
-  if (view.phase === 'reveal_bid') return <BidReveal view={view} me={me} chip={chip} />;
-  if (view.phase === 'prep') return <Prep view={view} me={me} now={now} chip={chip} />;
-  if (view.phase === 'speeches') return <Speeches view={view} me={me} now={now} chip={chip} />;
-  if (view.phase === 'facilitator_bonus') return <Bonus view={view} me={me} chip={chip} />;
-  if (view.phase === 'vote') return <Vote view={view} me={me} now={now} chip={chip} />;
-  return <Results view={view} me={me} chip={chip} />;
+  if (view.phase === 'reveal_prompt') return <PromptShown view={view} />;
+  if (view.phase === 'immunity_bid') return <Bid view={view} me={me} now={now} />;
+  if (view.phase === 'reveal_bid') return <BidReveal view={view} me={me} />;
+  if (view.phase === 'prep') return <Prep view={view} me={me} now={now} />;
+  if (view.phase === 'speeches') return <Speeches view={view} me={me} now={now} />;
+  if (view.phase === 'facilitator_bonus') return <Bonus view={view} />;
+  if (view.phase === 'vote') return <Vote view={view} me={me} now={now} />;
+  return <Results view={view} me={me} />;
 }
 
 function Lobby({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
   const shown = [...view.players].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
   const extra = Math.max(0, shown.length - 6);
+  const { least, most } = tokenBounds(shown.map((player) => player.tokens));
   return (
     <>
-      <Header chip="Sala de espera" />
       <h2>¡Estás dentro, {me.name}!</h2>
-      <div className="stats">
-        <div className="stat">
-          <p className="label">Tu ranking</p>
-          <p className="value">{rankLabel(me.rank)}</p>
-        </div>
-        <div className="stat">
-          <p className="label">Fichas de influencia</p>
-          <p className="value">{me.tokens}</p>
-        </div>
-      </div>
-      <p className="note block">Ranking aleatorio. Todos empiezan con 5 fichas.</p>
+      <p className="note block">Ranking aleatorio. Todos empiezan con {tokenLabel(rulesOf(view).startingInfluenceTokens)}.</p>
       <p className="block">
         <b>Jugadores conectados ({view.players.length})</b>
       </p>
       <ul className="people">
         {shown.slice(0, 6).map((player) => (
           <li key={player.email} className={player.email === me.email ? 'you' : ''}>
-            {player.name}
+            <PlayerName name={player.name} tokens={player.tokens} least={least} most={most} />
             {player.email === me.email ? ' (vos)' : ''}
+            {` · ${tokenLabel(player.tokens)}`}
           </li>
         ))}
         {extra > 0 && <li>+{extra} más</li>}
@@ -148,19 +146,17 @@ function Lobby({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
   );
 }
 
-function PromptShown({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip: string }) {
-  const count = slots(view.rosterSize, view.round);
+function PromptShown({ view }: { view: PlayerView }) {
+  const count = slots(view.rosterSize, view.round, rulesOf(view));
   return (
     <>
-      <Header chip={chip} />
-      <Status me={me} label="Activo" />
       <p className="kicker">CONSIGNA DE LA RONDA</p>
       <div className="prompt">
         <p>{view.prompt?.text}</p>
       </div>
       <p className="lead">
-        {isLastRound(view.rosterSize, view.round)
-          ? 'En la última ronda todos los activos quedan nominados: la puja no da inmunidad.'
+        {view.rosterSize !== null && nominatesAllActive(view.rosterSize, view.round, rulesOf(view))
+          ? 'En esta ronda todos los activos quedan nominados: la puja no da inmunidad.'
           : `Los ${count} jugadores que menos fichas pujen serán nominados y tendrán que responder esta consigna en voz alta.`}
       </p>
       <p className="panel">La puja empieza cuando el facilitador inicie el reloj.</p>
@@ -168,15 +164,13 @@ function PromptShown({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; 
   );
 }
 
-function Bid({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch; now: number; chip: string }) {
+function Bid({ view, me, now }: { view: PlayerView; me: PlayerInMatch; now: number }) {
   const [error, setError] = useState('');
   function setAmount(amount: number) {
-    const result = updateMatch(view.code, (match) => setImmunityBid(match, me.email, amount, Date.now()));
-    setError(result.ok ? '' : errorText(result.error));
+    void placeBid(view.code, me.email, amount).then((result) => setError(result.ok ? '' : actionError(result.error)));
   }
   return (
     <>
-      <Header chip={chip} />
       {view.clock && <ClockRead deadline={view.clock.deadline} now={now} caption="Tiempo restante de la puja" />}
       <div className="prompt-soft">
         <p>{view.prompt?.text}</p>
@@ -208,7 +202,7 @@ function Bid({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch; now
   );
 }
 
-function BidReveal({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip: string }) {
+function BidReveal({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
   const [showAll, setShowAll] = useState(false);
   const nominated = view.nominees.includes(me.email);
   const rows = (view.bidSpends ?? [])
@@ -218,15 +212,17 @@ function BidReveal({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; ch
         email: spend.email,
         name: player?.name ?? spend.email,
         rank: player?.rank ?? null,
+        tokens: player?.tokens ?? 0,
         spent: spend.spent,
         nominated: view.nominees.includes(spend.email),
       };
     })
     .sort((a, b) => a.spent - b.spent || (b.rank ?? 0) - (a.rank ?? 0));
-  const order = speakingOrder(view);
+  const order = rankingOrder(view);
+  const { least, most } = tokenBounds(rows.map((row) => row.tokens));
+  const nomineeBounds = tokenBounds(order.map((email) => rows.find((row) => row.email === email)?.tokens ?? 0));
   return (
     <>
-      <Header chip={chip} />
       {nominated ? (
         <div className="banner">
           <h2>Estás nominado</h2>
@@ -259,7 +255,14 @@ function BidReveal({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; ch
               {rows.map((row) => (
                 <tr key={row.email} className={row.email === me.email ? 'me' : ''}>
                   <td>
-                    {row.email === me.email ? <b>{row.name} (vos)</b> : row.name}
+                    {row.email === me.email ? (
+                      <b>
+                        <PlayerName name={row.name} tokens={row.tokens} least={least} most={most} /> (vos)
+                      </b>
+                    ) : (
+                      <PlayerName name={row.name} tokens={row.tokens} least={least} most={most} />
+                    )}
+                    {` · ${tokenLabel(row.tokens)}`}
                   </td>
                   <td>{rankLabel(row.rank)}</td>
                   <td>{row.spent}</td>
@@ -273,23 +276,24 @@ function BidReveal({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; ch
       ) : (
         <>
           <p className="block">
-            <b>Nominados (responden en este orden)</b>
+            <b>Nominados</b>
           </p>
-          <ol className="order">
+          <ul className="people">
             {order.map((email) => {
               const row = rows.find((item) => item.email === email);
               return (
                 <li key={email}>
-                  {nameOf(view.players, email)} · {rankLabel(row?.rank ?? null)} · pujó {row?.spent ?? 0}
+                  <PlayerName name={nameOf(view.players, email)} tokens={row?.tokens ?? 0} least={nomineeBounds.least} most={nomineeBounds.most} />
+                  {` · ${rankLabel(row?.rank ?? null)} · ${tokenLabel(row?.tokens ?? 0)} · pujó ${row?.spent ?? 0}`}
                 </li>
               );
             })}
-          </ol>
+          </ul>
           <button type="button" className="btn secondary" onClick={() => setShowAll(true)}>
             Ver lo que gastó cada jugador
           </button>
-          {isLastRound(view.rosterSize, view.round) && (
-            <p className="note section">En la última ronda todos los activos quedan nominados: la puja no da inmunidad.</p>
+          {view.rosterSize !== null && nominatesAllActive(view.rosterSize, view.round, rulesOf(view)) && (
+            <p className="note section">En esta ronda todos los activos quedan nominados: la puja no da inmunidad.</p>
           )}
         </>
       )}
@@ -297,13 +301,12 @@ function BidReveal({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; ch
   );
 }
 
-function Prep({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch; now: number; chip: string }) {
+function Prep({ view, me, now }: { view: PlayerView; me: PlayerInMatch; now: number }) {
   const nominated = view.nominees.includes(me.email);
   const order = speakingOrder(view);
+  const { least, most } = tokenBounds(order.map((email) => view.players.find((player) => player.email === email)?.tokens ?? 0));
   return (
     <>
-      <Header chip={chip} />
-      {!nominated && <Status me={me} label="A salvo" />}
       {view.clock && <ClockRead deadline={view.clock.deadline} now={now} caption={nominated ? 'Preparate para responder' : ''} />}
       {!nominated && <p className="clock-caption">Los nominados se están preparando</p>}
       <div className={nominated ? 'prompt' : 'prompt-soft'}>
@@ -313,26 +316,31 @@ function Prep({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch; no
         <b>{nominated ? 'Orden de habla' : 'Van a hablar'}</b>
       </p>
       <ol className="order">
-        {order.map((email) => (
-          <li key={email} className={email === me.email ? 'you' : ''}>
-            {nameOf(view.players, email)} {rankLabel(view.players.find((player) => player.email === email)?.rank ?? null)}
-            {email === me.email ? ' · Vos' : ''}
-          </li>
-        ))}
+        {order.map((email) => {
+          const player = view.players.find((item) => item.email === email);
+          return (
+            <li key={email} className={email === me.email ? 'you' : ''}>
+              <PlayerName name={player?.name ?? email} tokens={player?.tokens ?? 0} least={least} most={most} />
+              {` ${rankLabel(player?.rank ?? null)} · ${tokenLabel(player?.tokens ?? 0)}`}
+              {email === me.email ? ' · Vos' : ''}
+            </li>
+          );
+        })}
       </ol>
     </>
   );
 }
 
-function Speeches({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch; now: number; chip: string }) {
+function Speeches({ view, me, now }: { view: PlayerView; me: PlayerInMatch; now: number }) {
   const order = speakingOrder(view);
   const index = view.speakerIndex ?? 0;
   const current = order[index];
   const mine = current === me.email;
   const expired = view.clock !== null && now >= view.clock.deadline;
+  const { least, most } = tokenBounds(order.map((email) => view.players.find((player) => player.email === email)?.tokens ?? 0));
+  const currentPlayer = view.players.find((player) => player.email === current);
   return (
     <>
-      <Header chip={chip} />
       {mine && view.clock ? (
         <div className="banner center">
           <h2>Es tu turno</h2>
@@ -343,7 +351,14 @@ function Speeches({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch
         <div className="banner-outline center">
           <p className="kicker">Está hablando</p>
           <h2>
-            {current ? `${nameOf(view.players, current)} · ${rankLabel(view.players.find((player) => player.email === current)?.rank ?? null)}` : '—'}
+            {current ? (
+              <>
+                <PlayerName name={nameOf(view.players, current)} tokens={currentPlayer?.tokens ?? 0} least={least} most={most} />
+                {` · ${rankLabel(currentPlayer?.rank ?? null)} · ${tokenLabel(currentPlayer?.tokens ?? 0)}`}
+              </>
+            ) : (
+              '—'
+            )}
           </h2>
           {view.clock && <p className="clock">{formatClock(view.clock.deadline, now)}</p>}
           {expired && <p>¡Tiempo! Corte a los 60 segundos</p>}
@@ -359,9 +374,12 @@ function Speeches({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch
         {order.map((email, turn) => {
           const done = turn < index;
           const speaking = turn === index;
+          const player = view.players.find((item) => item.email === email);
+          const name = player?.name ?? email;
           return (
             <li key={email} className={done ? 'done' : speaking ? 'you' : ''}>
-              {nameOf(view.players, email)} {rankLabel(view.players.find((player) => player.email === email)?.rank ?? null)}
+              {done ? name : <PlayerName name={name} tokens={player?.tokens ?? 0} least={least} most={most} />}
+              {` ${rankLabel(player?.rank ?? null)} · ${tokenLabel(player?.tokens ?? 0)}`}
               {done ? ' · listo' : speaking ? ' · hablando' : ''}
             </li>
           );
@@ -372,133 +390,123 @@ function Speeches({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch
   );
 }
 
-function Bonus({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip: string }) {
-  const skipped = view.facilitatorBonus !== null && view.facilitatorBonus.length === 0;
+function Bonus({ view }: { view: PlayerView }) {
+  const confirmed = view.facilitatorBonus !== null;
+  const skipped = confirmed && view.facilitatorBonus?.length === 0;
+  const order = rankingOrder(view);
+  const listed = order.map((email) => view.players.find((player) => player.email === email));
+  const { least, most } = tokenBounds(listed.map((player) => player?.tokens ?? 0));
   return (
     <>
-      <Header chip={chip} />
-      <Status me={me} label={view.nominees.includes(me.email) ? 'Nominado' : me.status === 'fired' ? 'Votante estrella' : 'A salvo'} />
       <h2>Bono público del facilitador</h2>
       <p className="lead">Estas fichas se suman al total de cada nominado antes de votar.</p>
-      {view.facilitatorBonus === null && <p className="panel">Esperando que el facilitador asigne el bono…</p>}
+      {!confirmed && <p className="panel">Esperando que el facilitador asigne el bono…</p>}
       {skipped && <p className="panel">El facilitador no asignó bono esta ronda.</p>}
-      {view.facilitatorBonus !== null && view.facilitatorBonus.length > 0 && (
-        <table className="grid">
-          <tbody>
-            {view.nominees.map((email) => {
-              const bonus = view.facilitatorBonus?.find((item) => item.nominee === email)?.tokens ?? 0;
-              return (
-                <tr key={email}>
-                  <td>
-                    {nameOf(view.players, email)} {rankLabel(view.players.find((player) => player.email === email)?.rank ?? null)}
-                  </td>
-                  <td className="num">{bonus > 0 ? <b>+{bonus}</b> : 0}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-      {view.facilitatorBonus === null && (
-        <p className="note block">Si el facilitador omite el bono, no se suma ninguna ficha.</p>
-      )}
+      <table className="grid">
+        <tbody>
+          {order.map((email) => {
+            const player = view.players.find((item) => item.email === email);
+            const bonus = view.facilitatorBonus?.find((item) => item.nominee === email)?.tokens ?? 0;
+            return (
+              <tr key={email}>
+                <td>
+                  <PlayerName name={player?.name ?? email} tokens={player?.tokens ?? 0} least={least} most={most} />
+                  {` ${rankLabel(player?.rank ?? null)} · ${tokenLabel(player?.tokens ?? 0)}`}
+                </td>
+                {confirmed && <td className="num">{bonus > 0 ? <b>+{bonus}</b> : 0}</td>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {!confirmed && <p className="note block">Si el facilitador omite el bono, no se suma ninguna ficha.</p>}
       <p className="panel">La votación empieza cuando el facilitador inicie el reloj.</p>
     </>
   );
 }
 
-function Vote({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch; now: number; chip: string }) {
+function Vote({ view, me, now }: { view: PlayerView; me: PlayerInMatch; now: number }) {
   const nominated = view.nominees.includes(me.email);
   const [error, setError] = useState('');
   if (nominated) {
     const mine = view.facilitatorBonus?.find((item) => item.nominee === me.email)?.tokens ?? 0;
     return (
       <>
-        <Header chip={chip} />
-        <Status me={me} label="Nominado" />
         {view.clock && <ClockRead deadline={view.clock.deadline} now={now} caption="" />}
         <h2 className="center-title">Los demás están votando</h2>
-        <p className="lead center-copy">Como estás nominado, esta ronda no votás. Los 2 nominados con más fichas sobreviven.</p>
-        <p className="prompt-soft center-copy">
-          Tu bono público: <b>+{mine}</b>
-        </p>
+        <p className="lead center-copy">Como estás nominado, esta ronda no votás. {survivorSentence(survivorsThisRound(activePlayers(view), view.nominees.length, rulesOf(view)))}</p>
+        {view.facilitatorBonus !== null && (
+          <p className="prompt-soft center-copy">
+            Tu bono público: <b>+{mine}</b>
+          </p>
+        )}
       </>
     );
   }
 
-  const spentTokens = me.votes.reduce((sum, vote) => sum + vote.tokens, 0);
-  const spentSpecial = me.votes.reduce((sum, vote) => sum + vote.specialTokens, 0);
-  const freeTokens = me.tokens - spentTokens;
-  const freeSpecial = me.specialTokens - spentSpecial;
+  const placed = me.votes.reduce((sum, vote) => sum + vote.tokens, 0);
+  const freeSpent = Math.min(me.freeTokens, placed);
+  const influenceLeft = me.tokens - (placed - freeSpent);
+  const freeLeft = me.freeTokens - freeSpent;
+  const order = rankingOrder(view);
+  const { least, most } = tokenBounds(order.map((email) => view.players.find((player) => player.email === email)?.tokens ?? 0));
+  const bonusConfirmed = view.facilitatorBonus !== null;
 
-  function change(email: string, tokens: number, specialTokens: number) {
+  function change(email: string, next: number) {
     const allocation = view.nominees
       .map((nominee) => {
         const current = me.votes.find((vote) => vote.nominee === nominee);
-        const base = nominee === email ? { tokens, specialTokens } : { tokens: current?.tokens ?? 0, specialTokens: current?.specialTokens ?? 0 };
-        return { nominee, ...base };
+        const tokens = nominee === email ? next : (current?.tokens ?? 0);
+        return { nominee, tokens };
       })
-      .filter((vote) => vote.tokens + vote.specialTokens > 0);
-    const result = updateMatch(view.code, (match) => setVote(match, me.email, allocation, Date.now()));
-    setError(result.ok ? '' : errorText(result.error));
+      .filter((vote) => vote.tokens > 0);
+    void placeVote(view.code, me.email, allocation).then((result) => setError(result.ok ? '' : actionError(result.error)));
   }
 
   return (
     <>
-      <Header chip={chip} />
       {view.clock && <ClockRead deadline={view.clock.deadline} now={now} caption="" />}
       <div className="bar">
         <span>
-          Influencia: <b>{freeTokens} de {me.tokens}</b> libre
+          Influencia: <b>{influenceLeft} de {me.tokens}</b>
         </span>
         <span>
-          {me.specialTokens === 1 ? 'Especial' : 'Especiales'}: <b>{freeSpecial} de {me.specialTokens}</b> libre
+          Libres: <b>{freeLeft} de {me.freeTokens}</b>
         </span>
       </div>
       <p className="note block">
         {me.status === 'fired'
-          ? 'Votante estrella: 3 fichas especiales por ronda. Las que no uses se pierden.'
-          : 'La ficha especial solo sirve para votar y se pierde si no la usás.'}
+          ? `Despedido: ${freeTokenLabel(rulesOf(view).freeTokensForFiredVoters)} por ronda. Se gastan primero y las que no uses se pierden.`
+          : 'Las fichas libres se gastan primero. Solo sirven para votar y se pierden si no las usás.'}
       </p>
       <table className="grid">
         <thead>
           <tr>
             <th>Nominado</th>
-            <th>Influencia</th>
-            <th>Especial</th>
+            <th>Fichas</th>
           </tr>
         </thead>
         <tbody>
-          {view.nominees.map((email) => {
+          {order.map((email) => {
             const vote = me.votes.find((item) => item.nominee === email);
             const tokens = vote?.tokens ?? 0;
-            const special = vote?.specialTokens ?? 0;
+            const player = view.players.find((item) => item.email === email);
             const bonus = view.facilitatorBonus?.find((item) => item.nominee === email)?.tokens ?? 0;
-            const who = nameOf(view.players, email);
+            const who = player?.name ?? email;
             return (
               <tr key={email}>
                 <td>
-                  {who} {rankLabel(view.players.find((player) => player.email === email)?.rank ?? null)}
-                  {bonus > 0 && <span className="note"> bono +{bonus}</span>}
+                  <PlayerName name={who} tokens={player?.tokens ?? 0} least={least} most={most} />
+                  {` ${rankLabel(player?.rank ?? null)} · ${tokenLabel(player?.tokens ?? 0)}`}
+                  {bonusConfirmed && <span className="note">{` bono +${bonus}`}</span>}
                 </td>
                 <td>
                   <span className="tiny">
-                    <button type="button" className="btn-tiny" aria-label={`Menos influencia para ${who}`} disabled={tokens <= 0} onClick={() => change(email, tokens - 1, special)}>
+                    <button type="button" className="btn-tiny" aria-label={`Menos fichas para ${who}`} disabled={tokens <= 0} onClick={() => change(email, tokens - 1)}>
                       −
                     </button>
                     <b>{tokens}</b>
-                    <button type="button" className="btn-tiny" aria-label={`Más influencia para ${who}`} disabled={freeTokens <= 0} onClick={() => change(email, tokens + 1, special)}>
-                      +
-                    </button>
-                  </span>
-                </td>
-                <td>
-                  <span className="tiny">
-                    <button type="button" className="btn-tiny" aria-label={`Menos especial para ${who}`} disabled={special <= 0} onClick={() => change(email, tokens, special - 1)}>
-                      −
-                    </button>
-                    <b>{special}</b>
-                    <button type="button" className="btn-tiny" aria-label={`Más especial para ${who}`} disabled={freeSpecial <= 0} onClick={() => change(email, tokens, special + 1)}>
+                    <button type="button" className="btn-tiny" aria-label={`Más fichas para ${who}`} disabled={influenceLeft + freeLeft <= 0} onClick={() => change(email, tokens + 1)}>
                       +
                     </button>
                   </span>
@@ -511,29 +519,41 @@ function Vote({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch; no
       {error && <p className="error">{error}</p>}
       <p className="saved">
         ✓ Voto guardado. Podés poner varias fichas en el mismo nominado y cambiar hasta el cierre. Nadie ve tu voto.
-        {me.status === 'fired' ? ' Si votás a un sobreviviente recuperás lo invertido + 2 fichas, igual que los activos.' : ''}
+        {me.status === 'fired'
+          ? ` Si votás a un sobreviviente recuperás lo invertido + ${rulesOf(view).extraTokensForVotingASurvivor} fichas, igual que los activos.`
+          : ''}
       </p>
     </>
   );
 }
 
-function Results({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip: string }) {
+function Results({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
   const results = view.results;
-  if (!results) return <Header chip={chip} />;
+  if (!results) return null;
   const firedMe = results.fired.includes(me.email);
   const place = results.totals.findIndex((total) => total.nominee === me.email) + 1;
   const ballot = results.ballots.find((item) => item.email === me.email);
   const mine = results.awards.filter((award) => award.email === me.email);
   const active = view.players.filter((player) => player.status === 'active').sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  const rankedTotals = rankingOrder({ nominees: results.totals.map((total) => total.nominee), players: view.players }).flatMap((email) => {
+    const total = results.totals.find((item) => item.nominee === email);
+    return total ? [total] : [];
+  });
+  const nomineeBounds = tokenBounds(
+    rankedTotals.map((total) => view.players.find((player) => player.email === total.nominee)?.tokens ?? 0),
+  );
+  const activeBounds = tokenBounds(active.map((player) => player.tokens));
+  const ballotBounds = tokenBounds(
+    (ballot?.votes ?? []).map((vote) => view.players.find((player) => player.email === vote.nominee)?.tokens ?? 0),
+  );
   return (
     <>
-      <Header chip={chip} />
       {firedMe && (
         <>
           <div className="mark" />
           <h2 className="center-title">Fuiste despedido</h2>
           <p className="lead center-copy">
-            Quedaste {place}.º con {results.totals.find((total) => total.nominee === me.email)?.total ?? 0} votos. Solo los 2 más votados sobreviven.
+            Quedaste {place}.º con {results.totals.find((total) => total.nominee === me.email)?.total ?? 0} votos. {survivorSentence(results.survivors.length)}
           </p>
           <div className="stats">
             <div className="stat">
@@ -546,7 +566,7 @@ function Results({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip
             </div>
           </div>
           <div className="banner">
-            <b>Ahora sos Votante estrella.</b> Cada ronda recibís 3 fichas especiales para votar. No volvés a pujar ni a ser nominado.
+            <b>Ahora sos Despedido.</b> Cada ronda recibís {freeTokenLabel(rulesOf(view).freeTokensForFiredVoters)} para votar. No volvés a pujar ni a ser nominado.
           </div>
         </>
       )}
@@ -561,24 +581,30 @@ function Results({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip
           </tr>
         </thead>
         <tbody>
-          {results.totals.map((total) => (
+          {rankedTotals.map((total) => {
+            const player = view.players.find((item) => item.email === total.nominee);
+            const name = player?.name ?? total.nominee;
+            return (
             <tr key={total.nominee} className={total.nominee === me.email ? 'me' : ''}>
               <td>
-                {nameOf(view.players, total.nominee)}{' '}
-                {rankLabel(
-                  view.players.find((player) => player.email === total.nominee)?.rank ??
-                    view.players.find((player) => player.email === total.nominee)?.rankWhenFired ??
-                    null,
+                {total.nominee === me.email ? (
+                  <b>
+                    <PlayerName name={name} tokens={player?.tokens ?? 0} least={nomineeBounds.least} most={nomineeBounds.most} /> (vos)
+                  </b>
+                ) : (
+                  <PlayerName name={name} tokens={player?.tokens ?? 0} least={nomineeBounds.least} most={nomineeBounds.most} />
                 )}
+                {` ${rankLabel(player?.rank ?? player?.rankWhenFired ?? null)} · ${tokenLabel(player?.tokens ?? 0)}`}
               </td>
-              <td>{total.tokens + total.specialTokens}</td>
+              <td>{total.tokens}</td>
               <td>{total.bonus}</td>
               <td>
                 <b>{total.total}</b>
               </td>
               <td>{results.survivors.includes(total.nominee) ? <b>Sobrevive</b> : 'Despedido'}</td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
       <p className="block">
@@ -587,7 +613,8 @@ function Results({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip
       <ul className="people">
         {active.map((player) => (
           <li key={player.email}>
-            {player.name} {rankLabel(player.rank)} · {player.tokens} fichas
+            <PlayerName name={player.name} tokens={player.tokens} least={activeBounds.least} most={activeBounds.most} />
+            {` ${rankLabel(player.rank)} · ${tokenLabel(player.tokens)}`}
           </li>
         ))}
       </ul>
@@ -597,14 +624,19 @@ function Results({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip
             <b>Tu voto</b>
           </p>
           <ul className="people">
-            {ballot.votes.map((vote) => (
-              <li key={vote.nominee}>
-                {nameOf(view.players, vote.nominee)}: {vote.tokens} influencia + {vote.specialTokens} especial
-              </li>
-            ))}
+            {rankingOrder({ nominees: ballot.votes.map((vote) => vote.nominee), players: view.players }).map((email) => {
+              const vote = ballot.votes.find((item) => item.nominee === email);
+              const player = view.players.find((item) => item.email === email);
+              return (
+                <li key={email}>
+                  <PlayerName name={player?.name ?? email} tokens={player?.tokens ?? 0} least={ballotBounds.least} most={ballotBounds.most} />
+                  {` · ${tokenLabel(player?.tokens ?? 0)}: ${tokenLabel(vote?.tokens ?? 0)}`}
+                </li>
+              );
+            })}
           </ul>
           <p className="dashed">
-            {ballot.unusedSpecialTokens > 0 ? 'Tu ficha especial no usada se perdió.' : 'Fichas especiales sin usar: 0 perdidas.'}
+            {ballot.unusedFreeTokens > 0 ? `Se ${ballot.unusedFreeTokens === 1 ? 'perdió' : 'perdieron'} ${freeTokenLabel(ballot.unusedFreeTokens)} sin usar.` : 'Fichas libres sin usar: 0 perdidas.'}
           </p>
         </>
       )}
@@ -628,9 +660,13 @@ function Results({ view, me, chip }: { view: PlayerView; me: PlayerInMatch; chip
 function Victory({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
   const won = view.winners?.some((winner) => winner.email === me.email) ?? false;
   const total = view.winners?.length ?? 0;
+  const rows = (view.winners ?? []).map((winner) => {
+    const player = view.players.find((item) => item.email === winner.email);
+    return { winner, player, tokens: player?.tokens ?? 0 };
+  });
+  const { least, most } = tokenBounds(rows.map((row) => row.tokens));
   return (
     <>
-      <Header chip="Fin de la partida" />
       {won ? (
         <div className="banner hero center">
           <h2>¡Ganaste!</h2>
@@ -647,13 +683,21 @@ function Victory({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
       </p>
       <table className="grid">
         <tbody>
-          {(view.winners ?? []).map((winner) => {
-            const player = view.players.find((item) => item.email === winner.email);
+          {rows.map(({ winner, player, tokens }) => {
+            const name = player?.name ?? winner.email;
             return (
               <tr key={winner.email} className={winner.email === me.email ? 'me' : ''}>
-                <td>{winner.email === me.email ? <b>{player?.name ?? winner.email} (vos)</b> : (player?.name ?? winner.email)}</td>
+                <td>
+                  {winner.email === me.email ? (
+                    <b>
+                      <PlayerName name={name} tokens={tokens} least={least} most={most} /> (vos)
+                    </b>
+                  ) : (
+                    <PlayerName name={name} tokens={tokens} least={least} most={most} />
+                  )}
+                </td>
                 <td className="note">
-                  {winner.kind === 'active' ? `Activo · ${rankLabel(player?.rank ?? null)}` : `Votante estrella · ${player?.tokens ?? 0} fichas`}
+                  {winner.kind === 'active' ? `Activo · ${rankLabel(player?.rank ?? null)} · ${tokenLabel(tokens)}` : `Despedido · ${tokenLabel(tokens)}`}
                 </td>
               </tr>
             );
@@ -669,21 +713,19 @@ function Victory({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
         </p>
       )}
       <p className="note section">
-        Los 2 activos que quedan ganan. Se suman los despedidos con más fichas permanentes (las especiales no cuentan). 7–24 jugadores: 1 · 25–42: 2 · 43–60: 3.
+        {winnerRuleText(rulesOf(view))}
       </p>
     </>
   );
 }
 
-function StarWait({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch; now: number; chip: string }) {
+function StarWait({ view, now }: { view: PlayerView; now: number }) {
   const phase =
     view.phase === 'immunity_bid' && view.clock
       ? `puja de los activos (${formatClock(view.clock.deadline, now)})`
       : 'consigna revelada';
   return (
     <>
-      <Header chip={chip} />
-      <Status me={me} label="Sin ranking" />
       <p className="kicker">CONSIGNA DE LA RONDA</p>
       <div className="prompt-soft">
         <p>{view.prompt?.text}</p>
@@ -693,35 +735,39 @@ function StarWait({ view, me, now, chip }: { view: PlayerView; me: PlayerInMatch
       </p>
       <p className="lead">No participás de la puja. Vas a ver los nominados y sus discursos, y te avisamos cuando empiece la votación.</p>
       <p className="banner-outline center">
-        En la votación vas a recibir <b>3 fichas especiales</b>
+        En la votación vas a recibir <b>{freeTokenLabel(rulesOf(view).freeTokensForFiredVoters)}</b>
       </p>
     </>
   );
 }
 
-function Status({ me, label }: { me: PlayerInMatch; label: string }) {
-  if (me.status === 'fired') {
-    return (
-      <div className="bar">
-        <span>
-          <b>Votante estrella</b>
-        </span>
-        <span>
-          <b>{me.tokens}</b> fichas
-        </span>
-        <span>Sin ranking</span>
-      </div>
-    );
-  }
+function activePlayers(view: PlayerView): number {
+  return view.players.filter((player) => player.status === 'active').length;
+}
+
+function survivorSentence(count: number): string {
+  if (count === 1) return 'El nominado con más fichas sobrevive.';
+  return `Los ${count} nominados con más fichas sobreviven.`;
+}
+
+const NOMINEE_PHASES = new Set<PlayerView['phase']>(['reveal_bid', 'prep', 'speeches', 'facilitator_bonus', 'vote']);
+
+function statusWord(view: PlayerView, me: PlayerInMatch): 'Nominado' | 'Activo' | 'Despedido' {
+  if (me.status === 'fired') return 'Despedido';
+  if (NOMINEE_PHASES.has(view.phase) && view.nominees.includes(me.email)) return 'Nominado';
+  return 'Activo';
+}
+
+function Status({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
   return (
     <div className="bar">
       <span>
-        Ranking <b>{rankLabel(me.rank)}</b>
+        Ranking <b>{rankLabel(me.rank ?? me.rankWhenFired)}</b>
       </span>
       <span>
         <b>{me.tokens}</b> fichas
       </span>
-      <span>{label}</span>
+      <span>{statusWord(view, me)}</span>
     </div>
   );
 }

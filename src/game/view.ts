@@ -29,6 +29,7 @@ export interface PublicPlayer {
   email: string;
   status: 'active' | 'fired';
   rank: number | null;
+  rankWhenFired: number | null;
   tokens: number;
 }
 
@@ -60,6 +61,7 @@ function publicPlayers(match: Match): PublicPlayer[] {
     email: p.email,
     status: p.status,
     rank: p.rank,
+    rankWhenFired: p.rankWhenFired,
     tokens: p.tokens,
   }));
 }

@@ -8,5 +8,6 @@ export * from './vote';
 export * from './round';
 export * from './speeches';
 export * from './victory';
+export * from './rewards';
 export * from './content';
 export * from './view';

@@ -1,0 +1,107 @@
+[
+  {
+    "id": "seed-1",
+    "type": "A- Liderazgo y ética",
+    "text": "Tenés 1 minuto para despedir a una persona que no conocés, ¿cómo se lo comunicás?"
+  },
+  {
+    "id": "seed-2",
+    "type": "A- Liderazgo y ética",
+    "text": "La mitad de tu equipo puede perder su trabajo pero vos estás salvado, ¿cómo los motivás?"
+  },
+  {
+    "id": "seed-3",
+    "type": "A- Liderazgo y ética",
+    "text": "Tenés presupuesto para retener sólo a una persona de tu equipo, ¿con qué criterio elegís y qué le decís al resto?"
+  },
+  {
+    "id": "seed-4",
+    "type": "A- Liderazgo y ética",
+    "text": "Descubrís que el proyecto estrella de la empresa está basado en datos inflados. El CEO te pide en privado que lo presentes igual ante los inversores o tu equipo entero será despedido hoy mismo. ¿Qué le respondés en esta reunión 1 a 1?"
+  },
+  {
+    "id": "seed-5",
+    "type": "A- Liderazgo y ética",
+    "text": "Tu jefe directo se lleva el crédito de tu mejor idea/trabajo y recibe un ascenso por ello. ¿Qué hacés al respecto?"
+  },
+  {
+    "id": "seed-6",
+    "type": "A- Liderazgo y ética",
+    "text": "Convencé al resto de los jugadores de por qué vos no deberías ser el próximo despedido de la empresa."
+  },
+  {
+    "id": "seed-7",
+    "type": "A- Liderazgo y ética",
+    "text": "Tu equipo te detesta activamente por una decisión impopular pero necesaria que tomaste y que salvó las finanzas del área. Tenés un minuto para dar tu discurso motivacional de fin de año frente a ellos."
+  },
+  {
+    "id": "seed-8",
+    "type": "A- Liderazgo y ética",
+    "text": "Un empleado clave y de alto rendimiento renuncia sorpresivamente argumentando que sos un líder tóxico y micro-manager. Tenés 1 minuto a solas con él antes de que cruce la puerta para siempre. ¿Cómo lo convencés de que se quede?"
+  },
+  {
+    "id": "seed-9",
+    "type": "A- Liderazgo y ética",
+    "text": "Recibís un ascenso que te convierte en jefe de tus actuales compañeros. Uno de ellos estaba esperando ese ascenso y cree firmemente que lo merecía mucho más que vos. ¿Cómo iniciás tu primera reunión de equipo como su nuevo jefe?"
+  },
+  {
+    "id": "seed-10",
+    "type": "B- Exposición personal",
+    "text": "¿Qué fue lo peor que le hiciste a otra persona y qué harías si pudieras volver a ese momento y actuar distinto?"
+  },
+  {
+    "id": "seed-11",
+    "type": "B- Exposición personal",
+    "text": "Contá un secreto, algo que muy pocos saben."
+  },
+  {
+    "id": "seed-12",
+    "type": "B- Exposición personal",
+    "text": "¿Cuál es el sueño de tu vida y qué estarías dispuesto a sacrificar por ello?"
+  },
+  {
+    "id": "seed-13",
+    "type": "B- Exposición personal",
+    "text": "¿Cuál es tu peor defecto del cual estás orgulloso y no pensás cambiar?"
+  },
+  {
+    "id": "seed-14",
+    "type": "B- Exposición personal",
+    "text": "¿Qué preferís y por qué: ser percibido como un tonto o ser percibido como mala persona?"
+  },
+  {
+    "id": "seed-15",
+    "type": "B- Exposición personal",
+    "text": "¿Cuál es tu principal código moral, la regla bajo la que vivís y que si pudieras harías que todos sigan?"
+  },
+  {
+    "id": "seed-16",
+    "type": "B- Exposición personal",
+    "text": "¿Qué epitafio debería estar en tu tumba cuando mueras?"
+  },
+  {
+    "id": "seed-17",
+    "type": "C- Creatividad y retórica",
+    "text": "Contá un chiste que consiga la mayor cantidad de risas."
+  },
+  {
+    "id": "seed-18",
+    "type": "C- Creatividad y retórica",
+    "text": "Convencenos de que te votemos para presidente del país."
+  },
+  {
+    "id": "seed-19",
+    "type": "C- Creatividad y retórica",
+    "text": "Completá la frase con la metáfora más inspiradora que se te ocurra: \"La vida es como…\""
+  },
+  {
+    "id": "seed-20",
+    "type": "C- Creatividad y retórica",
+    "text": "Hacele un cumplido al facilitador que encierre un doble sentido negativo / Decile el mejor insulto encubierto al facilitador."
+  },
+  {
+    "id": "seed-21",
+    "type": "C- Creatividad y retórica",
+    "text": "Da un discurso que te haga parecer sabio sin estar diciendo nada realmente."
+  }
+]

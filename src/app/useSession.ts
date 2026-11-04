@@ -1,13 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { closeImmunityBid, closePrep, closeSpeech, closeVote } from '../game';
-import type { Match, Phase } from '../game';
-import {
-  getSnapshot,
-  rememberedPlayer,
-  subscribe,
-  updateMatch,
-  type Session,
-} from '../session';
+import type { Match } from '../game';
+import { getSnapshot, rememberedPlayer, subscribe, tick, type Session } from '../session';
 
 export function useSession(): Session {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
@@ -51,21 +44,7 @@ export function useAutoClose(match: Match | null): void {
   useEffect(() => {
     if (!code || deadline === null || !phase) return;
     const wait = Math.max(0, deadline - Date.now());
-    const timer = window.setTimeout(() => {
-      updateMatch(code, (current) => closePhase(current, phase));
-    }, wait);
+    const timer = window.setTimeout(() => void tick(code), wait);
     return () => window.clearTimeout(timer);
   }, [code, deadline, phase, speaker]);
-}
-
-function closePhase(match: Match, phase: Phase) {
-  if (match.phase !== phase || !match.clock || Date.now() < match.clock.deadline) {
-    return { ok: true as const, match };
-  }
-  const now = Date.now();
-  if (phase === 'immunity_bid') return closeImmunityBid(match, now);
-  if (phase === 'prep') return closePrep(match, now);
-  if (phase === 'speeches') return closeSpeech(match, now);
-  if (phase === 'vote') return closeVote(match, now);
-  return { ok: true as const, match };
 }

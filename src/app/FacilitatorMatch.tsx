@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { assignFacilitatorBonus, speakingOrder } from '../game';
+import { rankingOrder, rulesOf, speakingOrder } from '../game';
 import type { Match } from '../game';
-import { claimFacilitator, facilitator, facilitatorId, updateMatch } from '../session';
-import { Header, Link, Missing } from './chrome';
-import { errorText, isLastRound, nameOf, phaseName, rankLabel, roundChip } from './format';
+import { assignBonus, claimFacilitator, facilitator, facilitatorId } from '../session';
+import type { ActionResult } from '../session';
+import { Header, Link, Missing, PlayerName } from './chrome';
+import { actionError, isLastRound, nameOf, phaseName, rankLabel, roundChip, tokenBounds, tokenLabel } from './format';
 import { navigate, useAutoClose, useNow, useSession } from './useSession';
 
 export function FacilitatorMatch({ code }: { code: string }) {
@@ -12,7 +13,8 @@ export function FacilitatorMatch({ code }: { code: string }) {
   const [known, setKnown] = useState(() => facilitatorId(code));
   useAutoClose(match);
   const now = useNow();
-  if (!match) return <Missing />;
+  if (session.missing[code]) return <Missing />;
+  if (!match) return <p className="panel">{session.offline ? 'Sin conexión. Reintentando…' : 'Cargando…'}</p>;
   if (!known || known !== match.facilitatorId) return <Claim code={code} onClaim={setKnown} />;
   return <Console match={match} facilitatorId={known} now={now} />;
 }
@@ -27,11 +29,13 @@ function Claim({ code, onClaim }: { code: string; onClaim: (id: string) => void 
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!claimFacilitator(code, id)) {
-            setError('Ese identificador no corresponde a esta partida.');
-            return;
-          }
-          onClaim(id.trim());
+          void claimFacilitator(code, id).then((result) => {
+            if (!result.ok) {
+              setError(result.error === 'offline' ? 'No hay conexión. Probá de nuevo en un momento.' : 'Ese identificador no corresponde a esta partida.');
+              return;
+            }
+            onClaim(id.trim());
+          });
         }}
       >
         <label className="field" htmlFor="fac">
@@ -54,13 +58,26 @@ function Console({ match, facilitatorId: id, now }: { match: Match; facilitatorI
   const speaker = match.speakerIndex === null ? null : order[match.speakerIndex];
   const activeLeft = match.players.filter((player) => player.status === 'active').length;
 
-  function run(result: { ok: true; match: Match } | { ok: false; error: Parameters<typeof errorText>[0] }) {
-    setError(result.ok ? '' : errorText(result.error));
+  function run(pending: Promise<ActionResult>) {
+    void pending.then((result) => setError(result.ok ? '' : actionError(result.error)));
   }
 
   return (
     <>
-      <Header chip={roundChip(match.phase, match.round, match.rosterSize)} />
+      <div className="secondary-bar">
+        <Link to="/" className="home" label="Inicio">
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinejoin="round"
+              d="M4 10.5 12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1z"
+            />
+          </svg>
+        </Link>
+      </div>
+      <Header chip={roundChip(match.phase, match.round, match.rosterSize, rulesOf(match))} />
       <p className="note block">Facilitador · {match.code}</p>
       <label className="field" htmlFor="join">
         Link de jugadores
@@ -82,43 +99,16 @@ function Console({ match, facilitatorId: id, now }: { match: Match; facilitatorI
           <p className="block">
             <b>Jugadores conectados ({match.players.length})</b>
           </p>
-          <ul className="people">
-            {match.players
-              .slice()
-              .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))
-              .map((player) => (
-                <li key={player.email}>
-                  {player.name} · {rankLabel(player.rank)} · {player.email}
-                </li>
-              ))}
-          </ul>
+          <LobbyPlayers match={match} />
           <p className="panel">Revelar la consigna traba el ingreso. Hacen falta entre 7 y 60 jugadores.</p>
         </>
       )}
-      {match.phase === 'speeches' && speaker && (
-        <p className="panel">{match.clock ? 'Está hablando' : 'Próximo turno'}: {nameOf(match.players, speaker)}</p>
-      )}
+      {match.phase === 'speeches' && speaker && <Speaker match={match} speaker={speaker} />}
       {match.phase === 'facilitator_bonus' && <Bonus match={match} facilitator={id} onError={setError} />}
       {match.phase === 'victory' && match.winners && (
         <>
           <h2>Ganadores</h2>
-          <table className="grid">
-            <tbody>
-              {match.winners.map((winner) => {
-                const player = match.players.find((item) => item.email === winner.email);
-                return (
-                  <tr key={winner.email}>
-                    <td>{nameOf(match.players, winner.email)}</td>
-                    <td>
-                      {winner.kind === 'active'
-                        ? `Activo · ${rankLabel(player?.rank ?? null)}`
-                        : `Votante estrella · ${player?.tokens ?? 0} fichas`}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <Winners match={match} />
         </>
       )}
       {error && <p className="error">{error}</p>}
@@ -190,18 +180,67 @@ function Console({ match, facilitatorId: id, now }: { match: Match; facilitatorI
         )}
         {(match.phase === 'reveal_vote' || match.phase === 'round_end') && (
           <button type="button" className="btn" onClick={() => run(facilitator.advance(match.code, id))}>
-            {activeLeft <= 2 || isLastRound(match.rosterSize, match.round) ? 'Ver ganadores' : 'Siguiente ronda'}
+            {activeLeft <= rulesOf(match).activePlayersWhoWin || isLastRound(match.rosterSize, match.round, rulesOf(match)) ? 'Ver ganadores' : 'Siguiente ronda'}
           </button>
         )}
-        <Link to="/" className="btn secondary">
-          Inicio
-        </Link>
         <button type="button" className="btn secondary" onClick={() => navigate(`/p/${match.code}`)}>
           Abrir vista pública
         </button>
       </div>
       <p className="note section">Fase: {phaseName(match.phase)}</p>
     </>
+  );
+}
+
+function LobbyPlayers({ match }: { match: Match }) {
+  const players = match.players.slice().sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  const { least, most } = tokenBounds(players.map((player) => player.tokens));
+  return (
+    <ul className="people">
+      {players.map((player) => (
+        <li key={player.email}>
+          <PlayerName name={player.name} tokens={player.tokens} least={least} most={most} />
+          {` · ${rankLabel(player.rank)} · ${tokenLabel(player.tokens)} · ${player.email}`}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function Speaker({ match, speaker }: { match: Match; speaker: string }) {
+  const order = rankingOrder(match);
+  const { least, most } = tokenBounds(order.map((email) => match.players.find((player) => player.email === email)?.tokens ?? 0));
+  const player = match.players.find((item) => item.email === speaker);
+  return (
+    <p className="panel">
+      {match.clock ? 'Está hablando' : 'Próximo turno'}:{' '}
+      <PlayerName name={nameOf(match.players, speaker)} tokens={player?.tokens ?? 0} least={least} most={most} />
+      {` · ${tokenLabel(player?.tokens ?? 0)}`}
+    </p>
+  );
+}
+
+function Winners({ match }: { match: Match }) {
+  const rows = (match.winners ?? []).map((winner) => {
+    const player = match.players.find((item) => item.email === winner.email);
+    return { winner, player, tokens: player?.tokens ?? 0 };
+  });
+  const { least, most } = tokenBounds(rows.map((row) => row.tokens));
+  return (
+    <table className="grid">
+      <tbody>
+        {rows.map(({ winner, player, tokens }) => (
+          <tr key={winner.email}>
+            <td>
+              <PlayerName name={player?.name ?? winner.email} tokens={tokens} least={least} most={most} />
+            </td>
+            <td>
+              {winner.kind === 'active' ? `Activo · ${rankLabel(player?.rank ?? null)} · ${tokenLabel(tokens)}` : `Despedido · ${tokenLabel(tokens)}`}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -220,7 +259,7 @@ function Bonus({ match, facilitator: id, onError }: { match: Match; facilitator:
     setCounts((current) => {
       const value = current[email] ?? 0;
       const next = value + delta;
-      if (next < 0 || used + delta > 5) return current;
+      if (next < 0 || used + delta > rulesOf(match).facilitatorBonusTokens) return current;
       return { ...current, [email]: next };
     });
   }
@@ -229,22 +268,31 @@ function Bonus({ match, facilitator: id, onError }: { match: Match; facilitator:
     const allocation = skip
       ? []
       : match.nominees.map((email) => ({ nominee: email, tokens: counts[email] ?? 0 }));
-    const result = updateMatch(match.code, (current) => assignFacilitatorBonus(current, id, allocation));
-    onError(result.ok ? '' : errorText(result.error));
+    void assignBonus(match.code, id, allocation).then((result) => {
+      onError(result.ok ? '' : actionError(result.error));
+    });
     if (skip) setCounts(Object.fromEntries(match.nominees.map((email) => [email, 0])));
   }
 
+  const order = rankingOrder(match);
+  const { least, most } = tokenBounds(order.map((email) => match.players.find((player) => player.email === email)?.tokens ?? 0));
+
   return (
     <>
-      <h2>Bono público de 5 fichas</h2>
-      <p className="lead">Repartí hasta 5 fichas entre los nominados, o salteá el bono.</p>
-      <p className="note block">{used} de 5 asignadas</p>
+      <h2>Bono público de {tokenLabel(rulesOf(match).facilitatorBonusTokens)}</h2>
+      <p className="lead">Repartí hasta {tokenLabel(rulesOf(match).facilitatorBonusTokens)} entre los nominados, o salteá el bono.</p>
+      <p className="note block">
+        {used} de {rulesOf(match).facilitatorBonusTokens} asignadas
+      </p>
       <table className="grid">
         <tbody>
-          {match.nominees.map((email) => (
+          {order.map((email) => {
+            const player = match.players.find((item) => item.email === email);
+            return (
             <tr key={email}>
               <td>
-                {nameOf(match.players, email)} {rankLabel(match.players.find((player) => player.email === email)?.rank ?? null)}
+                <PlayerName name={player?.name ?? email} tokens={player?.tokens ?? 0} least={least} most={most} />
+                {` ${rankLabel(player?.rank ?? null)} · ${tokenLabel(player?.tokens ?? 0)}`}
               </td>
               <td className="num">
                 <span className="tiny">
@@ -258,15 +306,13 @@ function Bonus({ match, facilitator: id, onError }: { match: Match; facilitator:
                 </span>
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
       <div className="actions">
         <button type="button" className="btn" onClick={() => save(false)}>
           Asignar bono
-        </button>
-        <button type="button" className="btn secondary" onClick={() => save(true)}>
-          Omitir bono
         </button>
       </div>
     </>

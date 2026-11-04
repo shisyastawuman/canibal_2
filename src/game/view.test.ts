@@ -66,15 +66,15 @@ describe('public view (US-1.4, US-2.5, US-4.7)', () => {
     if (!nominee) throw new Error('no nominee');
     const voter = match.players.find((p) => !match.nominees.includes(p.email));
     if (!voter) throw new Error('no voter');
-    match = ok(setVote(match, voter.email, [{ nominee, tokens: 1, specialTokens: 1 }], 5_000));
+    match = ok(setVote(match, voter.email, [{ nominee, tokens: 2 }], 5_000));
     match = ok(closeVote(match, 5_000 + VOTE_CLOCK_MS));
 
     const mine = viewForPlayer(match, voter.email);
-    expect(mine.results?.ballots).toEqual([{ email: voter.email, votes: [{ nominee, tokens: 1, specialTokens: 1 }], unusedSpecialTokens: 0 }]);
+    expect(mine.results?.ballots).toEqual([{ email: voter.email, votes: [{ nominee, tokens: 2 }], unusedFreeTokens: 0 }]);
     const other = match.players.find((p) => p.email !== voter.email);
     const otherView = viewForPlayer(match, other?.email ?? '');
     expect(otherView.results?.ballots.every((b) => b.email === other?.email)).toBe(true);
-    expect(otherView.results?.ballots.some((b) => b.votes.some((v) => v.tokens + v.specialTokens > 0))).toBe(false);
+    expect(otherView.results?.ballots.some((b) => b.votes.some((v) => v.tokens > 0))).toBe(false);
     expect(mine.players.every((p) => !('votes' in p))).toBe(true);
   });
 });

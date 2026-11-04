@@ -186,7 +186,7 @@ There is a single shared match. Every phone reads that state.
 | Prompt | `prompt` | Consigna |
 | Immunity bid | `immunityBid` | Puja por inmunidad |
 | Nominee | `nominee` | Nominado |
-| Fired / star voter | `fired` | Despedido / votante estrella |
+| Fired / star voter | `fired` | Despedido / Despedido |
 | Facilitator | `facilitator` | Facilitador |
 | Public bonus of 5 tokens | `facilitatorBonus` | Bono público de 5 fichas |
 

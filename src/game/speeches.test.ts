@@ -6,6 +6,7 @@ import {
   closeSpeech,
   extendSpeechClock,
   PREP_CLOCK_MS,
+  rankingOrder,
   speakingOrder,
   SPEECH_CLOCK_MS,
   startPrepClock,
@@ -50,6 +51,7 @@ describe('spoken prompt (US-3.1 – US-3.3)', () => {
     match = ok(closePrep(match, T0 + PREP_CLOCK_MS));
     expect(match.phase).toBe('speeches');
     expect(speakingOrder(match)).toEqual(['p7@x.com', 'p6@x.com', 'p1@x.com']);
+    expect(rankingOrder(match)).toEqual(['p1@x.com', 'p6@x.com', 'p7@x.com']);
     expect(match.speakerIndex).toBe(0);
 
     match = ok(startSpeechClock(match, f, T0));
@@ -66,6 +68,18 @@ describe('spoken prompt (US-3.1 – US-3.3)', () => {
     expect(match.phase).toBe('facilitator_bonus');
     expect(match.speakerIndex).toBeNull();
     expect(match.facilitatorBonus).toBeNull();
+  });
+
+  it('lists fired nominees by the rank they had', () => {
+    expect(
+      rankingOrder({
+        nominees: ['gone@x.com', 'lead@x.com'],
+        players: [
+          { email: 'gone@x.com', rank: null, rankWhenFired: 4 },
+          { email: 'lead@x.com', rank: 1, rankWhenFired: null },
+        ],
+      }),
+    ).toEqual(['lead@x.com', 'gone@x.com']);
   });
 
   it('refuses a speech clock before prep has produced nominees in the speech phase', () => {

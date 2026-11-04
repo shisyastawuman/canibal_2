@@ -1,225 +1,380 @@
-import { addPrompt, deletePrompt, updatePrompt } from './game/content';
-import {
-  closeImmunityBid,
-  closePrep,
-  closeSpeech,
-  closeVote,
-  createMatch,
-  endRound,
-  extendBidClock,
-  extendPrepClock,
-  extendSpeechClock,
-  extendVoteClock,
-  joinMatch,
-  revealFirstPrompt,
-  startBidClock,
-  startNextRound,
-  startPrepClock,
-  startSpeechClock,
-  startVoteClock,
-  toHistoryEntry,
-} from './game';
-import type { HistoryEntry } from './game/victory';
-import type { GameError, Match, Prompt, Result } from './game/types';
+import type { BonusAllocation, GameError, HistoryEntry, Match, Prompt, Rules, VoteAllocation } from './game';
 
 export type { HistoryEntry };
+
+export interface OpenMatch {
+  code: string;
+  phase: Match['phase'];
+  playerCount: number;
+}
 
 export interface Session {
   prompts: Prompt[];
   history: HistoryEntry[];
   matches: Record<string, Match>;
+  openMatches: OpenMatch[];
   promptSeq: number;
+  ready: boolean;
+  offline: boolean;
+  missing: Record<string, boolean>;
+  catalogUpdatedAt: number;
 }
 
-const KEY = 'canibal-session-v1';
-const FAC_KEY = 'canibal-facilitator-ids';
+export type ActionError = GameError | 'offline';
+export type ActionResult = { ok: true; match: Match } | { ok: false; error: ActionError };
 
-const SEED: Prompt[] = [
-  { id: 'seed-1', text: 'Convencé al directorio de que tu área no debe sufrir recortes este año.' },
-  { id: 'seed-2', text: 'Contá un error que cometiste y qué aprendió tu equipo de él.' },
-  { id: 'seed-3', text: 'Defendé una decisión impopular que tomaste por el bien del equipo.' },
-  { id: 'seed-4', text: 'Explicá cómo repartirías un presupuesto que alcanza para un solo proyecto.' },
-  { id: 'seed-5', text: 'Convencé a un colega de cambiar un hábito que frena al equipo.' },
-  { id: 'seed-6', text: 'Contá una mala noticia y qué harías en los próximos treinta días.' },
-  { id: 'seed-7', text: 'Proponé una regla nueva para las reuniones y defendela en un minuto.' },
-];
+const API = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '');
+const FAC_KEY = 'canibal-facilitator-ids';
+const POLL_MS = 1000;
 
 const listeners = new Set<() => void>();
-let snapshot: Session = readStored() ?? emptySession();
-const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('canibal-2');
+const matchVersion = new Map<string, number>();
+let catalogVersion = 0;
+let polling = false;
+let queued = false;
+let wired = false;
+let timer = 0;
+let snapshot: Session = empty();
 
-function emptySession(): Session {
-  return { prompts: SEED, history: [], matches: {}, promptSeq: SEED.length };
+function empty(): Session {
+  return {
+    prompts: [],
+    history: [],
+    matches: {},
+    openMatches: [],
+    promptSeq: 0,
+    ready: false,
+    offline: false,
+    missing: {},
+    catalogUpdatedAt: 0,
+  };
 }
 
-function readStored(): Session | null {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Session;
-    if (!parsed.prompts || !parsed.matches || !parsed.history) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function fresh(): Session {
-  snapshot = readStored() ?? snapshot;
-  return snapshot;
-}
-
-function commit(next: Session): void {
-  snapshot = next;
-  localStorage.setItem(KEY, JSON.stringify(next));
-  channel?.postMessage(1);
+function emit(): void {
   for (const listener of listeners) listener();
 }
 
-channel?.addEventListener('message', () => {
-  snapshot = readStored() ?? snapshot;
-  for (const listener of listeners) listener();
-});
-
-window.addEventListener('storage', (event) => {
-  if (event.key !== KEY) return;
-  snapshot = readStored() ?? snapshot;
-  for (const listener of listeners) listener();
-});
+function patch(next: Partial<Session>): void {
+  snapshot = { ...snapshot, ...next };
+  emit();
+}
 
 export function subscribe(listener: () => void): () => void {
   listeners.add(listener);
-  return () => listeners.delete(listener);
+  ensurePolling();
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size === 0) window.clearInterval(timer);
+  };
 }
 
 export function getSnapshot(): Session {
   return snapshot;
 }
 
-export function updateMatch(code: string, fn: (match: Match) => Result): Result {
-  const session = fresh();
-  const match = session.matches[code];
-  if (!match) return { ok: false, error: 'wrong_phase' };
-  const result = fn(match);
-  if (!result.ok || result.match === match) return result;
-  let history = session.history;
-  if (result.match.phase === 'victory' && !history.some((entry) => entry.code === code)) {
-    history = [toHistoryEntry(result.match, Date.now()), ...history];
+export function facilitatorId(code: string): string | null {
+  return readIds()[code] ?? null;
+}
+
+export function rememberedPlayer(code: string): { email: string; name: string } | null {
+  const stored = readJson<{ email?: string; name?: string }>(localStorage.getItem(playerKey(code)));
+  if (stored?.email) return { email: stored.email, name: stored.name ?? '' };
+  const legacy = readJson<{ email?: string; name?: string }>(sessionStorage.getItem(playerKey(code)));
+  if (!legacy?.email) return null;
+  localStorage.setItem(playerKey(code), JSON.stringify({ email: legacy.email, name: legacy.name ?? '' }));
+  return { email: legacy.email, name: legacy.name ?? '' };
+}
+
+export function rememberPlayer(code: string, email: string, name: string): void {
+  localStorage.setItem(playerKey(code), JSON.stringify({ email, name }));
+}
+
+export function forgetPlayer(code: string): void {
+  localStorage.removeItem(playerKey(code));
+  sessionStorage.removeItem(playerKey(code));
+}
+
+export async function claimFacilitator(code: string, id: string): Promise<{ ok: true } | { ok: false; error: 'not_facilitator' | 'offline' }> {
+  const clean = id.trim();
+  if (!clean) return { ok: false, error: 'not_facilitator' };
+  const response = await request(`/api/matches/${encodeURIComponent(code)}`, { 'x-facilitator-id': clean });
+  if (response === 'offline') return { ok: false, error: 'offline' };
+  if (!response.body.ok || response.body.match?.facilitatorId !== clean) return { ok: false, error: 'not_facilitator' };
+  rememberFacilitator(code, clean);
+  adoptMatch(code, response.body.match as Match, numberOrZero(response.body.updatedAt));
+  return { ok: true };
+}
+
+export async function createNewMatch(promptIds: string[], rules: Rules): Promise<{ ok: true; code: string } | { ok: false; error: ActionError }> {
+  const response = await request('/api/matches', {}, { method: 'POST', body: JSON.stringify({ promptIds, rules }) });
+  if (response === 'offline') return { ok: false, error: 'offline' };
+  if (!response.body.ok || typeof response.body.code !== 'string' || !response.body.match) {
+    return { ok: false, error: (response.body.error as GameError) ?? 'not_enough_prompts' };
   }
-  commit({ ...session, history, matches: { ...session.matches, [code]: result.match } });
+  rememberFacilitator(response.body.code, response.body.match.facilitatorId as string);
+  adoptMatch(response.body.code, response.body.match as Match, numberOrZero(response.body.updatedAt));
+  return { ok: true, code: response.body.code };
+}
+
+export async function registerPlayer(code: string, name: string, email: string): Promise<ActionResult> {
+  const result = await send(code, { type: 'join', name, email }, { email });
+  if (result.ok) {
+    const player = result.match.players.find((item) => item.email === email.trim().toLowerCase());
+    rememberPlayer(code, player?.email ?? email.trim().toLowerCase(), player?.name ?? name.trim());
+    emit();
+  }
   return result;
 }
 
-export function facilitatorId(code: string): string | null {
+export async function placeBid(code: string, email: string, amount: number): Promise<ActionResult> {
+  return send(code, { type: 'setBid', email, amount }, { email });
+}
+
+export async function placeVote(code: string, email: string, allocation: VoteAllocation[]): Promise<ActionResult> {
+  return send(code, { type: 'setVote', email, allocation }, { email });
+}
+
+export async function assignBonus(code: string, facilitatorId: string, allocation: BonusAllocation[]): Promise<ActionResult> {
+  return send(code, { type: 'assignBonus', facilitatorId, allocation }, { facilitatorId });
+}
+
+export async function tick(code: string): Promise<void> {
+  const auth = authFor(code);
+  await send(code, { type: 'tick' }, auth);
+}
+
+export const facilitator = {
+  reveal: (code: string, id: string) => send(code, { type: 'reveal', facilitatorId: id }, { facilitatorId: id }),
+  startBid: (code: string, id: string) => send(code, { type: 'startBid', facilitatorId: id }, { facilitatorId: id }),
+  extendBid: (code: string, id: string) => send(code, { type: 'extendBid', facilitatorId: id }, { facilitatorId: id }),
+  closeBid: (code: string, id: string) => send(code, { type: 'closeBid', facilitatorId: id }, { facilitatorId: id }),
+  startPrep: (code: string, id: string) => send(code, { type: 'startPrep', facilitatorId: id }, { facilitatorId: id }),
+  extendPrep: (code: string, id: string) => send(code, { type: 'extendPrep', facilitatorId: id }, { facilitatorId: id }),
+  closePrep: (code: string, id: string) => send(code, { type: 'closePrep', facilitatorId: id }, { facilitatorId: id }),
+  startSpeech: (code: string, id: string) => send(code, { type: 'startSpeech', facilitatorId: id }, { facilitatorId: id }),
+  extendSpeech: (code: string, id: string) => send(code, { type: 'extendSpeech', facilitatorId: id }, { facilitatorId: id }),
+  closeSpeech: (code: string, id: string) => send(code, { type: 'closeSpeech', facilitatorId: id }, { facilitatorId: id }),
+  startVote: (code: string, id: string) => send(code, { type: 'startVote', facilitatorId: id }, { facilitatorId: id }),
+  extendVote: (code: string, id: string) => send(code, { type: 'extendVote', facilitatorId: id }, { facilitatorId: id }),
+  closeVote: (code: string, id: string) => send(code, { type: 'closeVote', facilitatorId: id }, { facilitatorId: id }),
+  advance: (code: string, id: string) => send(code, { type: 'advance', facilitatorId: id }, { facilitatorId: id }),
+};
+
+export async function createPrompt(text: string): Promise<{ ok: true } | { ok: false; error: 'invalid_prompt' | 'offline' }> {
+  const response = await request('/api/prompts', {}, { method: 'POST', body: JSON.stringify({ text }) });
+  if (response === 'offline') return { ok: false, error: 'offline' };
+  if (!response.body.ok) return { ok: false, error: 'invalid_prompt' };
+  await refresh();
+  return { ok: true };
+}
+
+export async function editPrompt(id: string, text: string): Promise<{ ok: true } | { ok: false; error: 'invalid_prompt' | 'unknown_prompt' | 'offline' }> {
+  const response = await request(`/api/prompts/${encodeURIComponent(id)}`, {}, { method: 'PATCH', body: JSON.stringify({ text }) });
+  if (response === 'offline') return { ok: false, error: 'offline' };
+  if (!response.body.ok) return { ok: false, error: response.body.error === 'unknown_prompt' ? 'unknown_prompt' : 'invalid_prompt' };
+  await refresh();
+  return { ok: true };
+}
+
+export async function removePrompt(id: string): Promise<{ ok: true } | { ok: false; error: 'unknown_prompt' | 'offline' }> {
+  const response = await request(`/api/prompts/${encodeURIComponent(id)}`, {}, { method: 'DELETE' });
+  if (response === 'offline') return { ok: false, error: 'offline' };
+  if (!response.body.ok) return { ok: false, error: 'unknown_prompt' };
+  await refresh();
+  return { ok: true };
+}
+
+function ensurePolling(): void {
+  void refresh();
+  window.clearInterval(timer);
+  timer = window.setInterval(() => void refresh(), POLL_MS);
+  if (wired) return;
+  wired = true;
+  window.addEventListener('focus', onWake);
+  window.addEventListener('online', onWake);
+  document.addEventListener('visibilitychange', onWake);
+}
+
+function onWake(): void {
+  if (document.visibilityState === 'hidden') return;
+  void refresh();
+}
+
+export async function refresh(): Promise<void> {
+  if (polling) {
+    queued = true;
+    return;
+  }
+  polling = true;
   try {
-    const map = JSON.parse(localStorage.getItem(FAC_KEY) ?? '{}') as Record<string, string>;
-    return map[code] ?? null;
-  } catch {
-    return null;
+    await pull();
+  } finally {
+    polling = false;
+    if (queued) {
+      queued = false;
+      void refresh();
+    }
   }
 }
 
-export function claimFacilitator(code: string, id: string): boolean {
-  const match = fresh().matches[code];
-  const clean = id.trim();
-  if (!match || match.facilitatorId !== clean) return false;
-  const map = JSON.parse(localStorage.getItem(FAC_KEY) ?? '{}') as Record<string, string>;
-  map[code] = clean;
-  localStorage.setItem(FAC_KEY, JSON.stringify(map));
-  return true;
+async function pull(): Promise<void> {
+  const session = await request('/api/session');
+  if (session === 'offline') {
+    patch({ offline: true, ready: true });
+    return;
+  }
+  const catalogUpdatedAt = numberOrZero(session.body.catalogUpdatedAt);
+  if (catalogUpdatedAt >= catalogVersion) {
+    catalogVersion = catalogUpdatedAt;
+    patch({
+      prompts: (session.body.prompts as Prompt[]) ?? [],
+      history: (session.body.history as HistoryEntry[]) ?? [],
+      openMatches: (session.body.openMatches as OpenMatch[]) ?? [],
+      promptSeq: numberOrZero(session.body.promptSeq),
+      catalogUpdatedAt,
+      offline: false,
+      ready: true,
+    });
+  } else {
+    patch({ offline: false, ready: true });
+  }
+
+  const watched = watchTarget();
+  if (!watched || watched.role === 'home') return;
+  const auth = authFor(watched.code);
+  const response = await request(`/api/matches/${encodeURIComponent(watched.code)}`, auth.headers);
+  if (response === 'offline') {
+    patch({ offline: true });
+    return;
+  }
+  if (response.status === 404) {
+    patch({ missing: { ...snapshot.missing, [watched.code]: true }, offline: false });
+    return;
+  }
+  if (response.status === 403 && auth.headers['x-facilitator-id']) {
+    const pub = await request(`/api/matches/${encodeURIComponent(watched.code)}`);
+    if (pub !== 'offline' && pub.body.ok && pub.body.match) adoptMatch(watched.code, pub.body.match as Match, numberOrZero(pub.body.updatedAt));
+    return;
+  }
+  if (response.body.ok && response.body.match) adoptMatch(watched.code, response.body.match as Match, numberOrZero(response.body.updatedAt));
+}
+
+async function send(code: string, body: object, auth: { email?: string; facilitatorId?: string }): Promise<ActionResult> {
+  const headers: Record<string, string> = {};
+  if (auth.email) headers['x-player-email'] = auth.email;
+  if (auth.facilitatorId) headers['x-facilitator-id'] = auth.facilitatorId;
+  const response = await request(`/api/matches/${encodeURIComponent(code)}/commands`, headers, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  if (response === 'offline') return { ok: false, error: 'offline' };
+  if (response.body.match) adoptMatch(code, response.body.match as Match, numberOrZero(response.body.updatedAt));
+  if (response.status === 404) {
+    patch({ missing: { ...snapshot.missing, [code]: true } });
+    return { ok: false, error: 'wrong_phase' };
+  }
+  if (!response.body.ok) return { ok: false, error: (response.body.error as GameError) ?? 'wrong_phase' };
+  return { ok: true, match: response.body.match as Match };
+}
+
+function adoptMatch(code: string, match: Match, updatedAt: number): void {
+  const seen = matchVersion.get(code) ?? -1;
+  const current = snapshot.matches[code];
+  if (updatedAt < seen) return;
+  if (updatedAt === seen && current && keepsMore(current, match)) return;
+  matchVersion.set(code, updatedAt);
+  snapshot = {
+    ...snapshot,
+    offline: false,
+    ready: true,
+    missing: { ...snapshot.missing, [code]: false },
+    matches: { ...snapshot.matches, [code]: match },
+  };
+  emit();
+}
+
+function keepsMore(current: Match, incoming: Match): boolean {
+  if (current.facilitatorId && !incoming.facilitatorId) return true;
+  const detail = (match: Match) => match.players.some((player) => player.votes.length > 0 || player.immunityBid > 0);
+  return detail(current) && !detail(incoming);
+}
+
+function watchTarget(): { role: 'home' } | { role: 'match'; code: string } | null {
+  if (typeof window === 'undefined') return null;
+  const path = window.location.pathname;
+  const routed = path.match(/^\/(m|j|p)\/([^/]+)\/?$/);
+  if (!routed?.[2]) return { role: 'home' };
+  return { role: 'match', code: decodeURIComponent(routed[2]) };
+}
+
+function authFor(code: string): { headers: Record<string, string>; email?: string; facilitatorId?: string } {
+  const path = window.location.pathname;
+  if (path.startsWith('/m/')) {
+    const id = facilitatorId(code);
+    return id ? { headers: { 'x-facilitator-id': id }, facilitatorId: id } : { headers: {} };
+  }
+  if (path.startsWith('/j/')) {
+    const player = rememberedPlayer(code);
+    return player ? { headers: { 'x-player-email': player.email }, email: player.email } : { headers: {} };
+  }
+  return { headers: {} };
+}
+
+interface ApiBody {
+  ok?: boolean;
+  error?: string;
+  code?: string;
+  match?: Match & { facilitatorId?: string };
+  updatedAt?: number;
+  prompts?: Prompt[];
+  history?: HistoryEntry[];
+  openMatches?: OpenMatch[];
+  promptSeq?: number;
+  catalogUpdatedAt?: number;
+}
+
+async function request(path: string, headers: Record<string, string> = {}, init: RequestInit = {}): Promise<{ status: number; body: ApiBody } | 'offline'> {
+  try {
+    const response = await fetch(`${API}${path}`, {
+      ...init,
+      cache: 'no-store',
+      headers: { 'content-type': 'application/json', ...headers, ...(init.headers ?? {}) },
+    });
+    const body = (await response.json().catch(() => ({}))) as ApiBody;
+    return { status: response.status, body };
+  } catch {
+    return 'offline';
+  }
 }
 
 function rememberFacilitator(code: string, id: string): void {
-  const map = JSON.parse(localStorage.getItem(FAC_KEY) ?? '{}') as Record<string, string>;
+  const map = readIds();
   map[code] = id;
   localStorage.setItem(FAC_KEY, JSON.stringify(map));
 }
 
-export function rememberedPlayer(code: string): { email: string; name: string } | null {
+function readIds(): Record<string, string> {
+  const parsed = readJson<Record<string, string>>(localStorage.getItem(FAC_KEY));
+  return parsed ?? {};
+}
+
+function readJson<T>(raw: string | null): T | null {
+  if (!raw) return null;
   try {
-    const raw = sessionStorage.getItem(`canibal-player:${code}`);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { email?: string; name?: string };
-    if (!parsed.email) return null;
-    return { email: parsed.email, name: parsed.name ?? '' };
+    return JSON.parse(raw) as T;
   } catch {
     return null;
   }
 }
 
-export function rememberPlayer(code: string, email: string, name: string): void {
-  sessionStorage.setItem(`canibal-player:${code}`, JSON.stringify({ email, name }));
+function playerKey(code: string): string {
+  return `canibal-player:${code}`;
 }
 
-export function forgetPlayer(code: string): void {
-  sessionStorage.removeItem(`canibal-player:${code}`);
+function numberOrZero(value: unknown): number {
+  return typeof value === 'number' ? value : 0;
 }
 
-export function createPrompt(text: string): { ok: true } | { ok: false; error: 'invalid_prompt' | 'unknown_prompt' } {
-  const session = fresh();
-  const id = `pr-${session.promptSeq + 1}`;
-  const result = addPrompt(session.prompts, id, text);
-  if (!result.ok) return result;
-  commit({ ...session, prompts: result.prompts, promptSeq: session.promptSeq + 1 });
-  return { ok: true };
+if (typeof window !== 'undefined') {
+  window.addEventListener('popstate', () => void refresh());
 }
-
-export function editPrompt(id: string, text: string): { ok: true } | { ok: false; error: 'invalid_prompt' | 'unknown_prompt' } {
-  const session = fresh();
-  const result = updatePrompt(session.prompts, id, text);
-  if (!result.ok) return result;
-  commit({ ...session, prompts: result.prompts });
-  return { ok: true };
-}
-
-export function removePrompt(id: string): { ok: true } | { ok: false; error: 'invalid_prompt' | 'unknown_prompt' } {
-  const session = fresh();
-  const result = deletePrompt(session.prompts, id);
-  if (!result.ok) return result;
-  commit({ ...session, prompts: result.prompts });
-  return { ok: true };
-}
-
-export function createNewMatch(promptIds: string[]): { ok: true; code: string } | { ok: false; error: GameError } {
-  const session = fresh();
-  const prompts = promptIds.flatMap((id) => {
-    const prompt = session.prompts.find((item) => item.id === id);
-    return prompt ? [prompt] : [];
-  });
-  if (prompts.length === 0) return { ok: false, error: 'not_enough_prompts' };
-  const match = createMatch(prompts, Math.random);
-  rememberFacilitator(match.code, match.facilitatorId);
-  commit({ ...session, matches: { ...session.matches, [match.code]: match } });
-  return { ok: true, code: match.code };
-}
-
-export function registerPlayer(code: string, name: string, email: string): Result {
-  const result = updateMatch(code, (match) => joinMatch(match, name, email, Math.random));
-  if (result.ok) {
-    const player = result.match.players.find((item) => item.email === email.trim().toLowerCase());
-    rememberPlayer(code, player?.email ?? email.trim().toLowerCase(), player?.name ?? name.trim());
-  }
-  return result;
-}
-
-export const facilitator = {
-  reveal: (code: string, id: string) => updateMatch(code, (match) => revealFirstPrompt(match, id)),
-  startBid: (code: string, id: string) => updateMatch(code, (match) => startBidClock(match, id, Date.now())),
-  extendBid: (code: string, id: string) => updateMatch(code, (match) => extendBidClock(match, id, Date.now())),
-  closeBid: (code: string, id: string) => updateMatch(code, (match) => closeImmunityBid(match, Date.now(), id)),
-  startPrep: (code: string, id: string) => updateMatch(code, (match) => startPrepClock(match, id, Date.now())),
-  extendPrep: (code: string, id: string) => updateMatch(code, (match) => extendPrepClock(match, id, Date.now())),
-  closePrep: (code: string, id: string) => updateMatch(code, (match) => closePrep(match, Date.now(), id)),
-  startSpeech: (code: string, id: string) => updateMatch(code, (match) => startSpeechClock(match, id, Date.now())),
-  extendSpeech: (code: string, id: string) => updateMatch(code, (match) => extendSpeechClock(match, id, Date.now())),
-  closeSpeech: (code: string, id: string) => updateMatch(code, (match) => closeSpeech(match, Date.now(), id)),
-  startVote: (code: string, id: string) => updateMatch(code, (match) => startVoteClock(match, id, Date.now())),
-  extendVote: (code: string, id: string) => updateMatch(code, (match) => extendVoteClock(match, id, Date.now())),
-  closeVote: (code: string, id: string) => updateMatch(code, (match) => closeVote(match, Date.now(), id)),
-  advance: (code: string, id: string) =>
-    updateMatch(code, (match) => {
-      const ended = match.phase === 'reveal_vote' ? endRound(match, id) : { ok: true as const, match };
-      if (!ended.ok) return ended;
-      return startNextRound(ended.match, id);
-    }),
-};

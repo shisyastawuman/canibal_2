@@ -46,7 +46,7 @@ describe('joinMatch (US-1.1, US-1.2)', () => {
       status: 'active',
       rank: 1,
       tokens: 5,
-      specialTokens: 0,
+      freeTokens: 0,
       immunityBid: 0,
       votes: [],
       firedInRound: null,

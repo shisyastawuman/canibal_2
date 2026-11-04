@@ -14,6 +14,8 @@
   --panel: #f3f3f3;
   --chip: #eee;
   --inverse: #333;
+  --token-low: hsl(8 14% 38%);
+  --token-high: hsl(8 78% 34%);
   --radius: 8px;
   --radius-card: 12px;
   --radius-panel: 10px;
@@ -56,6 +58,26 @@ p { margin: 0; }
   align-items: center;
   gap: 12px;
   margin-bottom: 12px;
+}
+.secondary-bar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  margin: -40px -24px 16px;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line-soft);
+}
+.home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--ink);
+  text-decoration: none;
 }
 .brand { font-weight: bold; font-size: 16px; }
 .chip {
@@ -138,6 +160,9 @@ p { margin: 0; }
 }
 
 .people, .order { margin: 0 0 16px; padding-left: 20px; line-height: 26px; font-size: 14px; }
+.player-name {
+  color: color-mix(in srgb, var(--token-low) calc((1 - var(--wealth)) * 100%), var(--token-high) calc(var(--wealth) * 100%));
+}
 .you { font-weight: bold; }
 .done { color: var(--line); }
 
@@ -148,6 +173,29 @@ table.grid tr.me { background: var(--chip); }
 table.grid .num { text-align: right; }
 
 label.field { display: block; font-size: 13px; font-weight: bold; margin: 0 0 6px; }
+.rules { margin: 0 0 12px; }
+.rule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+  font-size: 13px;
+  font-weight: bold;
+}
+.rule-pair { display: flex; gap: 8px; flex: none; }
+.rule input[type='number'],
+.rule input[type='text'] {
+  width: 72px;
+  height: 36px;
+  margin: 0;
+  padding: 0 8px;
+  text-align: right;
+  flex: none;
+}
+.rule input[readonly] { background: var(--panel); }
 input[type='text'], input[type='email'], textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -223,3 +271,17 @@ a { color: var(--ink); }
 .row-actions .btn { height: 36px; font-size: 13px; }
 .check { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
 .check input { width: auto; height: auto; margin: 3px 0 0; }
+.tag {
+  display: block;
+  width: fit-content;
+  margin: 0 0 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 18px;
+  color: #fff;
+}
+.tag-a { background: #8f2d2d; }
+.tag-b { background: #2f5f8f; }
+.tag-c { background: #2f6b45; }

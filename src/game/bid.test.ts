@@ -8,6 +8,7 @@ import {
   startBidClock,
 } from './bid';
 import { createMatch, findPlayer, joinMatch, revealFirstPrompt } from './match';
+import { rewards } from './rewards';
 import type { Match, PlayerInMatch, Prompt, Result } from './types';
 import { viewForPlayer } from './view';
 
@@ -127,8 +128,12 @@ describe('closeImmunityBid (US-2.3, US-2.4)', () => {
     expect(closed.clock).toBeNull();
   });
 
-  it('nominates 11 on round 1 of a 60-player match', () => {
-    const closed = ok(closeImmunityBid(bidding(60), T0 + BID_CLOCK_MS));
+  it('nominates the count chosen for that match', () => {
+    let match = createMatch(prompts, () => 0.5, { ...rewards, nomineesPerRound: 11 });
+    for (let i = 1; i <= 60; i++) match = ok(joinMatch(match, `J${i}`, `p${i}@x.com`, () => 0.999999));
+    match = ok(revealFirstPrompt(match, match.facilitatorId));
+    match = ok(startBidClock(match, match.facilitatorId, T0));
+    const closed = ok(closeImmunityBid(match, T0 + BID_CLOCK_MS));
     expect(closed.nominees).toHaveLength(11);
   });
 });
@@ -141,7 +146,7 @@ describe('selectNominees tie-break example (section 4.4)', () => {
       status: 'active',
       rank,
       tokens: 5,
-      specialTokens: 0,
+      freeTokens: 0,
       immunityBid,
       votes: [],
       firedInRound: null,

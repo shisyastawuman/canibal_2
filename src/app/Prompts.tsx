@@ -9,6 +9,7 @@ export function Prompts() {
   const [editing, setEditing] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [error, setError] = useState('');
+  if (!session.ready) return <p className="panel">Cargando…</p>;
 
   return (
     <>
@@ -17,13 +18,14 @@ export function Prompts() {
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          const result = createPrompt(draft);
-          if (!result.ok) {
-            setError('Escribí el texto de la consigna.');
-            return;
-          }
-          setDraft('');
-          setError('');
+          void createPrompt(draft).then((result) => {
+            if (!result.ok) {
+              setError(result.error === 'offline' ? 'No hay conexión. Probá de nuevo en un momento.' : 'Escribí el texto de la consigna.');
+              return;
+            }
+            setDraft('');
+            setError('');
+          });
         }}
       >
         <label className="field" htmlFor="nueva">
@@ -41,13 +43,14 @@ export function Prompts() {
             <form
               onSubmit={(event) => {
                 event.preventDefault();
-                const result = editPrompt(prompt.id, editText);
-                if (!result.ok) {
-                  setError('Escribí el texto de la consigna.');
-                  return;
-                }
-                setEditing(null);
-                setError('');
+                void editPrompt(prompt.id, editText).then((result) => {
+                  if (!result.ok) {
+                    setError(result.error === 'offline' ? 'No hay conexión. Probá de nuevo en un momento.' : 'Escribí el texto de la consigna.');
+                    return;
+                  }
+                  setEditing(null);
+                  setError('');
+                });
               }}
             >
               <textarea value={editText} onChange={(event) => setEditText(event.target.value)} />
@@ -74,7 +77,7 @@ export function Prompts() {
                 >
                   Modificar
                 </button>
-                <button type="button" className="btn secondary" onClick={() => removePrompt(prompt.id)}>
+                <button type="button" className="btn secondary" onClick={() => void removePrompt(prompt.id)}>
                   Eliminar
                 </button>
               </div>

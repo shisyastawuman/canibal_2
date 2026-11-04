@@ -14,6 +14,18 @@ export function speakingOrder(match: {
   return [...match.nominees].sort((a, b) => rankOf(b) - rankOf(a));
 }
 
+/** Nominees from #1 toward the worst rank. A fired nominee keeps the rank they had. */
+export function rankingOrder(match: {
+  nominees: readonly string[];
+  players: readonly { email: string; rank: number | null; rankWhenFired?: number | null }[];
+}): string[] {
+  const rankOf = (email: string) => {
+    const player = match.players.find((p) => p.email === email);
+    return player?.rank ?? player?.rankWhenFired ?? Number.POSITIVE_INFINITY;
+  };
+  return [...match.nominees].sort((a, b) => rankOf(a) - rankOf(b));
+}
+
 /** Facilitator opens the shared 0:30 prep. Requires this round's nominees. */
 export function startPrepClock(match: Match, facilitatorId: string, now: number): Result {
   if (!isFacilitator(match, facilitatorId)) return { ok: false, error: 'not_facilitator' };

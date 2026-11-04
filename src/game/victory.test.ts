@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createMatch } from './match';
 import type { Match, PlayerInMatch } from './types';
-import { declareVictory, firedWinnerSeats, pickWinners, rankFiredForVictory, toHistoryEntry } from './victory';
+import { firedWinnerSeats } from './rewards';
+import { declareVictory, pickWinners, rankFiredForVictory, toHistoryEntry } from './victory';
 
 function fired(email: string, tokens: number, round: number, rank: number): PlayerInMatch {
   return {
@@ -10,7 +11,7 @@ function fired(email: string, tokens: number, round: number, rank: number): Play
     status: 'fired',
     rank: null,
     tokens,
-    specialTokens: 4,
+    freeTokens: 4,
     immunityBid: 0,
     votes: [],
     firedInRound: round,
@@ -25,7 +26,7 @@ function active(email: string, rank: number, tokens = 5): PlayerInMatch {
     status: 'active',
     rank,
     tokens,
-    specialTokens: 0,
+    freeTokens: 0,
     immunityBid: 0,
     votes: [],
     firedInRound: null,
@@ -60,7 +61,7 @@ describe('victory (US-6.1)', () => {
     ]);
   });
 
-  it('keeps the two active players and ignores special tokens', () => {
+  it('keeps the two active players and ignores free tokens', () => {
     const players = [active('first@x.com', 1, 3), active('second@x.com', 2, 9), fired('star@x.com', 8, 2, 4), fired('other@x.com', 8, 1, 1)];
     const match: Match = { ...createMatch([], () => 0), rosterSize: 7, players };
     expect(pickWinners(match)).toEqual([

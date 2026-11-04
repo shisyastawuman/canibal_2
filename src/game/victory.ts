@@ -1,11 +1,5 @@
+import { firedWinnerSeats, rulesOf } from './rewards';
 import type { Match, PlayerInMatch, Winner } from './types';
-
-/** Fired winners added so the podium stays between 3 and 5. Section 4.8. */
-export function firedWinnerSeats(rosterSize: number): number {
-  if (rosterSize <= 24) return 1;
-  if (rosterSize <= 42) return 2;
-  return 3;
-}
 
 /**
  * More permanent tokens first. Equal tokens: fired later first.
@@ -29,7 +23,7 @@ export function pickWinners(match: Match): Winner[] {
     .filter((p) => p.status === 'active')
     .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity))
     .map((p): Winner => ({ email: p.email, kind: 'active' }));
-  const seats = firedWinnerSeats(match.rosterSize ?? match.players.length);
+  const seats = firedWinnerSeats(match.rosterSize ?? match.players.length, rulesOf(match));
   const fired = rankFiredForVictory(match.players)
     .slice(0, seats)
     .map((p): Winner => ({ email: p.email, kind: 'fired' }));

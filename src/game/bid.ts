@@ -1,5 +1,6 @@
 import { checkClose, extendClock } from './clock';
 import { findPlayer, isFacilitator } from './match';
+import { rulesOf } from './rewards';
 import { nomineeCount } from './schedule';
 import type { BidSpend, Match, PlayerInMatch, Result } from './types';
 
@@ -63,7 +64,7 @@ export function closeImmunityBid(match: Match, now: number, facilitatorId?: stri
   if (match.rosterSize === null) return { ok: false, error: 'wrong_phase' };
 
   const active = match.players.filter((p) => p.status === 'active');
-  const nominees = selectNominees(active, nomineeCount(match.rosterSize, match.round));
+  const nominees = selectNominees(active, nomineeCount(match.rosterSize, match.round, rulesOf(match)));
   const bidSpends: BidSpend[] = active.map((p) => ({ email: p.email, spent: p.immunityBid }));
 
   return {

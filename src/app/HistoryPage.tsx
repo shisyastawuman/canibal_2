@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { Link } from './chrome';
+import type { HistoryEntry } from '../session';
+import { Link, PlayerName } from './chrome';
+import { tokenBounds, tokenLabel } from './format';
 import { useSession } from './useSession';
 
 export function HistoryPage() {
   const session = useSession();
   const [note, setNote] = useState('');
+  if (!session.ready) return <p className="panel">Cargando…</p>;
   return (
     <>
       <h1>Historial</h1>
@@ -16,14 +19,7 @@ export function HistoryPage() {
             <b>{entry.code}</b>
             {` · ${new Date(entry.finishedAt).toLocaleString('es-AR')} · ${entry.rosterSize} jugadores`}
           </p>
-          <ul className="people">
-            {entry.winners.map((winner) => (
-              <li key={winner.email}>
-                {winner.name}
-                {winner.kind === 'active' ? ` · Activo ${winner.rank === null ? '' : `#${winner.rank}`}` : ` · Votante estrella · ${winner.tokens} fichas`}
-              </li>
-            ))}
-          </ul>
+          <Winners winners={entry.winners} />
           <button type="button" className="btn secondary" onClick={() => setNote('El informe de la partida todavía no está disponible.')}>
             Descargar informe
           </button>
@@ -36,5 +32,21 @@ export function HistoryPage() {
         </Link>
       </div>
     </>
+  );
+}
+
+function Winners({ winners }: { winners: HistoryEntry['winners'] }) {
+  const { least, most } = tokenBounds(winners.map((winner) => winner.tokens));
+  return (
+    <ul className="people">
+      {winners.map((winner) => (
+        <li key={winner.email}>
+          <PlayerName name={winner.name} tokens={winner.tokens} least={least} most={most} />
+          {winner.kind === 'active'
+            ? ` · Activo${winner.rank === null ? '' : ` #${winner.rank}`} · ${tokenLabel(winner.tokens)}`
+            : ` · Despedido · ${tokenLabel(winner.tokens)}`}
+        </li>
+      ))}
+    </ul>
   );
 }

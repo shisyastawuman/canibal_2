@@ -8,7 +8,7 @@ const player = (email: string, rank: number | null, status: PlayerInMatch['statu
   status,
   rank,
   tokens: 5,
-  specialTokens: 0,
+  freeTokens: 0,
   immunityBid: 0,
   votes: [],
   firedInRound: null,

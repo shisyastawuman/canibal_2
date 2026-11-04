@@ -1,11 +1,13 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { tokenWealth } from './format';
 import { navigate } from './useSession';
 
-export function Link({ to, className, children }: { to: string; className?: string; children: ReactNode }) {
+export function Link({ to, className, label, children }: { to: string; className?: string; label?: string; children: ReactNode }) {
   return (
     <a
       href={to}
       className={className ?? ''}
+      aria-label={label}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
@@ -14,6 +16,17 @@ export function Link({ to, className, children }: { to: string; className?: stri
     >
       {children}
     </a>
+  );
+}
+
+/** Name tinted on one red scale: more tokens, stronger color. Equal totals stay the default ink. */
+export function PlayerName({ name, tokens, least, most }: { name: string; tokens: number; least: number; most: number }) {
+  const wealth = tokenWealth(tokens, least, most);
+  if (wealth === null) return <>{name}</>;
+  return (
+    <span className="player-name" style={{ '--wealth': wealth } as CSSProperties}>
+      {name}
+    </span>
   );
 }
 

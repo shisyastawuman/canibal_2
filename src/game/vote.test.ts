@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { BID_CLOCK_MS, closeImmunityBid, setImmunityBid, startBidClock } from './bid';
 import { createMatch, findPlayer, joinMatch, revealFirstPrompt } from './match';
+import { rewards } from './rewards';
 import { endRound, startNextRound } from './round';
 import { closePrep, closeSpeech, PREP_CLOCK_MS, SPEECH_CLOCK_MS, startPrepClock, startSpeechClock } from './speeches';
 import type { Match, Prompt, Result } from './types';
@@ -73,9 +74,9 @@ describe('done when: a 7-player round from start to firing', () => {
 
     match = ok(assignFacilitatorBonus(match, f, [{ nominee: 'p7@x.com', tokens: 2 }]));
     match = ok(startVoteClock(match, f, T1));
-    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 2, specialTokens: 1 }], T1));
-    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p6@x.com', tokens: 1, specialTokens: 1 }], T1));
-    match = ok(setVote(match, 'p3@x.com', [{ nominee: 'p5@x.com', tokens: 0, specialTokens: 1 }], T1));
+    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 3 }], T1));
+    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p6@x.com', tokens: 2 }], T1));
+    match = ok(setVote(match, 'p3@x.com', [{ nominee: 'p5@x.com', tokens: 1 }], T1));
     match = ok(closeVote(match, AFTER_VOTE));
 
     // p5 = 4, p6 = 2, p7 = 2 (bonus). p6 and p7 tie: the better rank (#6) survives.
@@ -91,7 +92,7 @@ describe('done when: a 7-player round from start to firing', () => {
     const p7 = findPlayer(match, 'p7@x.com')!;
     expect(p7).toMatchObject({ status: 'fired', rank: null, tokens: 5, firedInRound: 1, rankWhenFired: 7 });
 
-    // Next round: p7 cannot bid or be nominated, but votes with 3 special tokens.
+    // Next round: p7 cannot bid or be nominated, but votes with 3 free tokens.
     match = ok(endRound(match, f));
     match = ok(startNextRound(match, f));
     expect(match.round).toBe(2);
@@ -103,11 +104,11 @@ describe('done when: a 7-player round from start to firing', () => {
 
     match = finishSpeeches(match);
     match = ok(startVoteClock(match, f, T1));
-    expect(findPlayer(match, 'p7@x.com')?.specialTokens).toBe(3);
+    expect(findPlayer(match, 'p7@x.com')?.freeTokens).toBe(3);
     const target = match.nominees[0]!;
-    match = ok(setVote(match, 'p7@x.com', [{ nominee: target, tokens: 0, specialTokens: 3 }], T1));
+    match = ok(setVote(match, 'p7@x.com', [{ nominee: target, tokens: 3 }], T1));
     match = ok(closeVote(match, AFTER_VOTE));
-    expect(match.results?.totals.find((t) => t.nominee === target)?.specialTokens).toBe(3);
+    expect(match.results?.totals.find((t) => t.nominee === target)?.tokens).toBe(3);
   });
 });
 
@@ -117,9 +118,9 @@ describe('reveal_vote rewards (section 4.6)', () => {
     const f = match.facilitatorId;
     match = ok(assignFacilitatorBonus(match, f, [{ nominee: 'p7@x.com', tokens: 2 }]));
     match = ok(startVoteClock(match, f, T1));
-    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 2, specialTokens: 1 }], T1));
-    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p6@x.com', tokens: 1, specialTokens: 1 }], T1));
-    match = ok(setVote(match, 'p3@x.com', [{ nominee: 'p5@x.com', tokens: 0, specialTokens: 1 }], T1));
+    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 3 }], T1));
+    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p6@x.com', tokens: 2 }], T1));
+    match = ok(setVote(match, 'p3@x.com', [{ nominee: 'p5@x.com', tokens: 1 }], T1));
     return ok(closeVote(match, AFTER_VOTE));
   }
 
@@ -139,16 +140,16 @@ describe('reveal_vote rewards (section 4.6)', () => {
     expect(tokens(match, 'p4@x.com')).toBe(4);
   });
 
-  it('unused special tokens are lost at the close', () => {
+  it('unused free tokens are lost at the close', () => {
     const match = revealed();
-    expect(match.players.every((p) => p.specialTokens === 0)).toBe(true);
+    expect(match.players.every((p) => p.freeTokens === 0)).toBe(true);
     expect(match.players.every((p) => p.votes.length === 0)).toBe(true);
   });
 
   it('every tied top voter gains 1', () => {
     let match = voting();
-    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 1, specialTokens: 0 }], T1));
-    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p5@x.com', tokens: 1, specialTokens: 0 }], T1));
+    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 1 }], T1));
+    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p5@x.com', tokens: 1 }], T1));
     match = ok(closeVote(match, AFTER_VOTE));
     const topVoters = match.results?.awards.filter((a) => a.reason === 'top_voter' && a.survivor === 'p5@x.com');
     expect(topVoters?.map((a) => a.email).sort()).toEqual(['p1@x.com', 'p2@x.com']);
@@ -204,10 +205,10 @@ describe('facilitator bonus (US-4.1)', () => {
 });
 
 describe('vote (US-4.2 – US-4.5)', () => {
-  it('hands 1 special token to active non-nominees and none to nominees', () => {
+  it('hands 1 free token to active non-nominees and none to nominees', () => {
     const match = voting();
-    expect(findPlayer(match, 'p1@x.com')?.specialTokens).toBe(1);
-    expect(findPlayer(match, 'p5@x.com')?.specialTokens).toBe(0);
+    expect(findPlayer(match, 'p1@x.com')?.freeTokens).toBe(1);
+    expect(findPlayer(match, 'p5@x.com')?.freeTokens).toBe(0);
   });
 
   it('nominees cannot vote', () => {
@@ -217,20 +218,31 @@ describe('vote (US-4.2 – US-4.5)', () => {
 
   it('allows several tokens on one nominee and the latest allocation replaces the previous', () => {
     let match = voting();
-    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 4, specialTokens: 1 }], T1));
-    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p6@x.com', tokens: 1, specialTokens: 0 }], T1 + 5));
-    expect(findPlayer(match, 'p1@x.com')?.votes).toEqual([{ nominee: 'p6@x.com', tokens: 1, specialTokens: 0 }]);
+    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 5 }], T1));
+    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p6@x.com', tokens: 1 }], T1 + 5));
+    expect(findPlayer(match, 'p1@x.com')?.votes).toEqual([{ nominee: 'p6@x.com', tokens: 1 }]);
   });
 
-  it('rejects spending beyond either balance, non-nominees and bad amounts', () => {
+  it('rejects spending beyond influence plus free tokens, non-nominees and bad amounts', () => {
     const match = voting();
-    const vote = (nominee: string, t: number, s: number) =>
-      setVote(match, 'p1@x.com', [{ nominee, tokens: t, specialTokens: s }], T1);
-    expect(vote('p5@x.com', 5, 0)).toEqual({ ok: false, error: 'vote_exceeds_tokens' });
-    expect(vote('p5@x.com', 0, 2)).toEqual({ ok: false, error: 'vote_exceeds_special_tokens' });
-    expect(vote('p2@x.com', 1, 0)).toEqual({ ok: false, error: 'invalid_vote' });
-    expect(vote('p5@x.com', 0.5, 0)).toEqual({ ok: false, error: 'invalid_vote' });
+    const vote = (nominee: string, tokens: number) => setVote(match, 'p1@x.com', [{ nominee, tokens }], T1);
+    expect(vote('p5@x.com', 5).ok).toBe(true);
+    expect(vote('p5@x.com', 6)).toEqual({ ok: false, error: 'vote_exceeds_tokens' });
+    expect(vote('p2@x.com', 1)).toEqual({ ok: false, error: 'invalid_vote' });
+    expect(vote('p5@x.com', 0.5)).toEqual({ ok: false, error: 'invalid_vote' });
     expect(setVote(match, 'ghost@x.com', [], T1)).toEqual({ ok: false, error: 'unknown_player' });
+  });
+
+  it('spends free tokens before influence, so an unused free token is the one that is lost', () => {
+    let match = voting();
+    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p7@x.com', tokens: 2 }], T1));
+    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p5@x.com', tokens: 3 }], T1));
+    match = ok(setVote(match, 'p3@x.com', [{ nominee: 'p6@x.com', tokens: 3 }], T1));
+    match = ok(closeVote(match, AFTER_VOTE));
+    expect(match.results?.fired).toEqual(['p7@x.com']);
+    expect(tokens(match, 'p1@x.com')).toBe(3);
+    expect(match.results?.ballots.find((ballot) => ballot.email === 'p1@x.com')?.unusedFreeTokens).toBe(0);
+    expect(match.results?.ballots.find((ballot) => ballot.email === 'p4@x.com')?.unusedFreeTokens).toBe(1);
   });
 
   it('closes on its own at the deadline; only the facilitator closes early or adds 30 s', () => {
@@ -244,8 +256,8 @@ describe('vote (US-4.2 – US-4.5)', () => {
 
   it('a phone sees its own allocation but not anyone else’s', () => {
     let match = voting();
-    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 1, specialTokens: 0 }], T1));
-    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p6@x.com', tokens: 1, specialTokens: 0 }], T1));
+    match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 1 }], T1));
+    match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p6@x.com', tokens: 1 }], T1));
     const view = viewForPlayer(match, 'p1@x.com');
     expect(view.me?.votes).toHaveLength(1);
     expect(view.players.every((p) => !('votes' in p))).toBe(true);
@@ -256,6 +268,26 @@ describe('vote (US-4.2 – US-4.5)', () => {
     expect(startPrepClock(match, match.facilitatorId, T0)).toEqual({ ok: false, error: 'wrong_phase' });
     expect(startSpeechClock(match, match.facilitatorId, T0)).toEqual({ ok: false, error: 'wrong_phase' });
     expect(startVoteClock(match, match.facilitatorId, T1)).toEqual({ ok: false, error: 'wrong_phase' });
+  });
+});
+
+describe('closing round', () => {
+  it('keeps two survivors when three nominees remain and the match wants two winners', () => {
+    const rules = { ...rewards, nomineesPerRound: 3, rewardedSurvivors: 1, activePlayersWhoWin: 2 };
+    let match = createMatch(prompts, () => 0.5, rules);
+    for (let i = 1; i <= 3; i++) match = ok(joinMatch(match, `J${i}`, `p${i}@x.com`, () => 0.999999));
+    match = {
+      ...match,
+      phase: 'vote',
+      round: 3,
+      rosterSize: 7,
+      nominees: ['p1@x.com', 'p2@x.com', 'p3@x.com'],
+      clock: { startedAt: T1, deadline: AFTER_VOTE },
+    };
+    match = ok(closeVote(match, AFTER_VOTE));
+    expect(match.results?.survivors).toHaveLength(2);
+    expect(match.results?.fired).toHaveLength(1);
+    expect(match.players.filter((player) => player.status === 'active')).toHaveLength(2);
   });
 });
 
