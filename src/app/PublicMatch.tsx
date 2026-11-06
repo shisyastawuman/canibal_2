@@ -1,9 +1,11 @@
 import { rankingOrder, rulesOf, speakingOrder, viewForPublic } from '../game';
 import type { PublicPlayer, PublicView } from '../game';
+import { QRCodeSVG } from 'qrcode.react';
 import { ActivePlayersList } from './ActivePlayersList';
 import { Header, Missing, PlayerName } from './chrome';
 import { FiredPlayersList } from './FiredPlayersList';
 import { nameOf, phaseName, rankLabel, roundChip, tokenBounds, tokenLabel } from './format';
+import { playerJoinUrl } from './FacilitatorMatch';
 import { RewardsBoard, SpeakingQueue, VoteRevealBoard } from './NomineeBoard';
 import { awardDeltas, playersBeforeDeltas, spendDeltas } from './rosterDeltas';
 import { useNow, useSession } from './useSession';
@@ -46,7 +48,9 @@ export function PublicMatch({ code }: { code: string }) {
           <h2>Activos</h2>
           <ActivePlayersList players={activePlayers} deltaByEmail={activeDeltas} highlightEmails={nomineeSet} />
         </aside>
-        <main className="public-main">{secret ? <SecretPhase view={view} now={now} /> : <OpenPhase view={view} now={now} players={players} />}</main>
+        <main className="public-main">
+          {secret ? <SecretPhase view={view} now={now} /> : <OpenPhase view={view} now={now} players={players} joinUrl={playerJoinUrl(code)} />}
+        </main>
         <aside className="public-side">
           <h2>Despedidos</h2>
           <FiredPlayersList players={firedPlayers} deltaByEmail={firedDeltas} />
@@ -71,7 +75,7 @@ function SecretPhase({ view, now }: { view: PublicView; now: number }) {
   );
 }
 
-function OpenPhase({ view, now, players }: { view: PublicView; now: number; players: PublicPlayer[] }) {
+function OpenPhase({ view, now, players, joinUrl }: { view: PublicView; now: number; players: PublicPlayer[]; joinUrl: string }) {
   const speaking = speakingOrder({ nominees: view.nominees ?? [], players, bidSpends: view.bidSpends });
   const rankedNominees = rankingOrder({ nominees: view.nominees ?? [], players });
   const speaker = view.phase === 'speeches' ? speaking[view.speakerIndex ?? 0] : undefined;
@@ -123,6 +127,13 @@ function OpenPhase({ view, now, players }: { view: PublicView; now: number; play
     <>
       {view.phase === 'lobby' && (
         <>
+          <label className="field" htmlFor="join">
+            Link de jugadores
+          </label>
+          <input id="join" type="text" readOnly value={joinUrl} />
+          <div className="qr">
+            <QRCodeSVG value={joinUrl} size={196} marginSize={4} bgColor="#ffffff" fgColor="#222222" title="Código QR del link de jugadores" />
+          </div>
           <h2>Jugadores conectados ({players.length})</h2>
           <People players={[...players].sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))} />
         </>

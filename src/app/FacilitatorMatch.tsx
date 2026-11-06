@@ -52,10 +52,14 @@ function Claim({ code, onClaim }: { code: string; onClaim: (id: string) => void 
   );
 }
 
+export function playerJoinUrl(code: string): string {
+  return `${window.location.origin}/j/${code}`;
+}
+
 function Console({ match, facilitatorId: id, now }: { match: Match; facilitatorId: string; now: number }) {
   const [error, setError] = useState('');
   const origin = window.location.origin;
-  const joinUrl = `${origin}/j/${match.code}`;
+  const joinUrl = playerJoinUrl(match.code);
   const order = speakingOrder(match);
   const speaker = match.speakerIndex === null ? null : order[match.speakerIndex];
   const activeLeft = match.players.filter((player) => player.status === 'active').length;
