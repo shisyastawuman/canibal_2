@@ -1,10 +1,16 @@
-import { useState } from 'react';
+import { useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { nominatesAllActive, rankingOrder, rulesOf, speakingOrder, survivorsThisRound, viewForPlayer } from '../game';
 import type { PlayerInMatch, PlayerView, TokenAward } from '../game';
 import { placeBid, placeVote, registerPlayer } from '../session';
+import { ActivePlayersList } from './ActivePlayersList';
 import { ClockRead, Header, Missing, PlayerName } from './chrome';
+import { FiredPlayersList } from './FiredPlayersList';
 import { actionError, freeTokenLabel, nameOf, rankLabel, roundChip, slots, tokenBounds, tokenLabel, winnerRuleText } from './format';
+import { RewardsBoard, SpeakingQueue, VoteRevealBoard } from './NomineeBoard';
+import { awardDeltas, playersBeforeDeltas, spendDeltas } from './rosterDeltas';
 import { useAutoClose, useNow, usePlayer, useSession } from './useSession';
+
+type PlayerPane = 'active' | 'phase' | 'fired';
 
 export function PlayerMatch({ code }: { code: string }) {
   const session = useSession();
@@ -31,7 +37,7 @@ function Register({ code }: { code: string }) {
   return (
     <>
       <h1>Caníbal</h1>
-      <p className="subtitle">Capacitación · Partida en vivo</p>
+      <p className="subtitle">¿Tenés lo que hace falta para sobrevivir?</p>
       <h2>Unite a la partida</h2>
       <p className="lead">Ingresá tu nombre y tu email para identificarte.</p>
       <form
@@ -94,13 +100,152 @@ function Closed({ code, returning, onReturn }: { code: string; returning: boolea
 
 function Screens({ view, now }: { view: PlayerView; now: number }) {
   const me = view.me;
+  const [pane, setPane] = useState<PlayerPane>('phase');
+  const swipe = useRef<{ id: number; x: number; y: number } | null>(null);
   if (!me) return <Missing />;
+
+  const fired = me.status === 'fired';
+  const nomineeSet = view.phase === 'reveal_bid' || view.phase === 'reveal_vote' ? view.nominees : [];
+  const activeDeltas =
+    view.phase === 'reveal_bid'
+      ? spendDeltas(view.bidSpends, '-')
+      : view.phase === 'reveal_vote'
+        ? spendDeltas(view.voteSpends, '-')
+        : view.phase === 'round_end'
+          ? awardDeltas(view.results?.awards)
+          : undefined;
+  const firedDeltas =
+    view.phase === 'reveal_vote'
+      ? spendDeltas(view.voteSpends, '-')
+      : view.phase === 'round_end'
+        ? awardDeltas(view.results?.awards)
+        : undefined;
+  const alreadyApplied = view.phase === 'reveal_bid' || view.phase === 'round_end';
+  const activePlayers = alreadyApplied ? playersBeforeDeltas(view.players, activeDeltas) : view.players;
+  const firedPlayers = alreadyApplied ? playersBeforeDeltas(view.players, firedDeltas) : view.players;
+
+  function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    swipe.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  }
+
+  function onPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    const start = swipe.current;
+    swipe.current = null;
+    if (!start || start.id !== event.pointerId) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    if (dx < 0) {
+      // Swipe left → active players (or back to phase from fired)
+      setPane((current) => (current === 'fired' ? 'phase' : 'active'));
+      return;
+    }
+    // Swipe right → fired players (or back to phase from active)
+    setPane((current) => (current === 'active' ? 'phase' : 'fired'));
+  }
+
+  function onPointerCancel(event: ReactPointerEvent<HTMLDivElement>) {
+    if (swipe.current?.id === event.pointerId) swipe.current = null;
+  }
+
   return (
-    <>
+    <div className={`player-shell${fired ? ' player-shell-fired' : ' player-shell-active'}`}>
       <Header chip={roundChip(view.phase, view.round, view.rosterSize, rulesOf(view))} />
       <Status view={view} me={me} />
-      <Phase view={view} me={me} now={now} />
-    </>
+      <div className="player-panes" onPointerDown={onPointerDown} onPointerUp={onPointerUp} onPointerCancel={onPointerCancel}>
+        {pane === 'active' && (
+          <Pane title="Activos">
+            <ActivePlayersList
+              players={activePlayers}
+              highlightEmail={me.email}
+              deltaByEmail={activeDeltas}
+              highlightEmails={nomineeSet}
+            />
+          </Pane>
+        )}
+        {pane === 'phase' && <Phase view={view} me={me} now={now} />}
+        {pane === 'fired' && (
+          <Pane title="Despedidos">
+            <FiredPlayersList players={firedPlayers} highlightEmail={me.email} deltaByEmail={firedDeltas} />
+          </Pane>
+        )}
+      </div>
+      <nav className="player-tabs" aria-label="Vistas del jugador">
+        <TabButton label="Activos" active={pane === 'active'} onClick={() => setPane('active')}>
+          <PeopleIcon />
+        </TabButton>
+        <TabButton label="Fase" active={pane === 'phase'} onClick={() => setPane('phase')}>
+          <PhaseIcon />
+        </TabButton>
+        <TabButton label="Despedidos" active={pane === 'fired'} onClick={() => setPane('fired')}>
+          <FiredIcon />
+        </TabButton>
+      </nav>
+    </div>
+  );
+}
+
+function Pane({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="player-pane">
+      <h2>{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function TabButton({ label, active, onClick, children }: { label: string; active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" className={`player-tab${active ? ' active' : ''}`} aria-label={label} aria-current={active ? 'page' : undefined} onClick={onClick}>
+      {children}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function PeopleIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M16 11a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm-8 0a3 3 0 1 0-3-3 3 3 0 0 0 3 3Zm0 2c-2.6 0-5 1.4-5 3.2V19h10v-2.8C13 14.4 10.6 13 8 13Zm8 0c-.4 0-.8 0-1.2.1 1.3.9 2.2 2.1 2.2 3.5V19h5v-2.8c0-1.8-2.4-3.2-6-3.2Z"
+      />
+    </svg>
+  );
+}
+
+function PhaseIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 6h16M4 12h10M4 18h14"
+      />
+    </svg>
+  );
+}
+
+function FiredIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 3 4 19h16L12 3Zm0 6v5m0 3h.01"
+      />
+    </svg>
   );
 }
 
@@ -117,6 +262,8 @@ function Phase({ view, me, now }: { view: PlayerView; me: PlayerInMatch; now: nu
   if (view.phase === 'speeches') return <Speeches view={view} me={me} now={now} />;
   if (view.phase === 'facilitator_bonus') return <Bonus view={view} />;
   if (view.phase === 'vote') return <Vote view={view} me={me} now={now} />;
+  if (view.phase === 'reveal_vote') return <VoteReveal view={view} me={me} />;
+  if (view.phase === 'round_end') return <RoundRewards view={view} me={me} />;
   return <Results view={view} me={me} />;
 }
 
@@ -203,24 +350,8 @@ function Bid({ view, me, now }: { view: PlayerView; me: PlayerInMatch; now: numb
 }
 
 function BidReveal({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
-  const [showAll, setShowAll] = useState(false);
   const nominated = view.nominees.includes(me.email);
-  const rows = (view.bidSpends ?? [])
-    .map((spend) => {
-      const player = view.players.find((item) => item.email === spend.email);
-      return {
-        email: spend.email,
-        name: player?.name ?? spend.email,
-        rank: player?.rank ?? null,
-        tokens: player?.tokens ?? 0,
-        spent: spend.spent,
-        nominated: view.nominees.includes(spend.email),
-      };
-    })
-    .sort((a, b) => a.spent - b.spent || (b.rank ?? 0) - (a.rank ?? 0));
-  const order = rankingOrder(view);
-  const { least, most } = tokenBounds(rows.map((row) => row.tokens));
-  const nomineeBounds = tokenBounds(order.map((email) => rows.find((row) => row.email === email)?.tokens ?? 0));
+  const spent = view.bidSpends?.find((item) => item.email === me.email)?.spent ?? 0;
   return (
     <>
       {nominated ? (
@@ -232,70 +363,59 @@ function BidReveal({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
         <div className="banner-outline">
           <h2>Estás a salvo esta ronda</h2>
           <p>
-            Pujaste {rows.find((row) => row.email === me.email)?.spent ?? 0}{' '}
-            {(rows.find((row) => row.email === me.email)?.spent ?? 0) === 1 ? 'ficha' : 'fichas'}. Vas a votar a los nominados.
+            Pujaste {spent} {spent === 1 ? 'ficha' : 'fichas'}. Vas a votar a los nominados.
           </p>
         </div>
       )}
-      {nominated || showAll ? (
-        <>
-          <p className="block">
-            <b>Lo que gastó cada jugador</b>
-          </p>
-          <table className="grid">
-            <thead>
-              <tr>
-                <th>Jugador</th>
-                <th>Rank</th>
-                <th>Pujó</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.email} className={row.email === me.email ? 'me' : ''}>
-                  <td>
-                    {row.email === me.email ? (
-                      <b>
-                        <PlayerName name={row.name} tokens={row.tokens} least={least} most={most} /> (vos)
-                      </b>
-                    ) : (
-                      <PlayerName name={row.name} tokens={row.tokens} least={least} most={most} />
-                    )}
-                    {` · ${tokenLabel(row.tokens)}`}
-                  </td>
-                  <td>{rankLabel(row.rank)}</td>
-                  <td>{row.spent}</td>
-                  <td>{row.nominated ? <b>Nominado</b> : 'A salvo'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="note">Empate: se nomina al de peor ranking (número más alto).</p>
-        </>
+      <SpeakingQueue nominees={view.nominees} players={view.players} bidSpends={view.bidSpends} meEmail={me.email} />
+      {view.rosterSize !== null && nominatesAllActive(view.rosterSize, view.round, rulesOf(view)) && (
+        <p className="note section">En esta ronda todos los activos quedan nominados: la puja no da inmunidad.</p>
+      )}
+    </>
+  );
+}
+
+function VoteReveal({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
+  const results = view.results;
+  if (!results) return null;
+  return (
+    <>
+      <h2>Resultados de la votación</h2>
+      <p className="lead">Se reordenan los nominados según los votos recibidos.</p>
+      <VoteRevealBoard
+        nominees={view.nominees}
+        players={view.players}
+        bidSpends={view.bidSpends}
+        results={results}
+        meEmail={me.email}
+      />
+    </>
+  );
+}
+
+function RoundRewards({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
+  const results = view.results;
+  if (!results) return null;
+  const firedMe = results.fired.includes(me.email);
+  const mine = results.awards.filter((award) => award.email === me.email);
+  return (
+    <>
+      {firedMe ? (
+        <div className="banner">
+          <h2>Fuiste despedido</h2>
+          <p>Conservás {tokenLabel(me.tokens)}. Cada ronda recibís {freeTokenLabel(rulesOf(view).freeTokensForFiredVoters)} para votar.</p>
+        </div>
       ) : (
-        <>
-          <p className="block">
-            <b>Nominados</b>
-          </p>
-          <ul className="people">
-            {order.map((email) => {
-              const row = rows.find((item) => item.email === email);
-              return (
-                <li key={email}>
-                  <PlayerName name={nameOf(view.players, email)} tokens={row?.tokens ?? 0} least={nomineeBounds.least} most={nomineeBounds.most} />
-                  {` · ${rankLabel(row?.rank ?? null)} · ${tokenLabel(row?.tokens ?? 0)} · pujó ${row?.spent ?? 0}`}
-                </li>
-              );
-            })}
-          </ul>
-          <button type="button" className="btn secondary" onClick={() => setShowAll(true)}>
-            Ver lo que gastó cada jugador
-          </button>
-          {view.rosterSize !== null && nominatesAllActive(view.rosterSize, view.round, rulesOf(view)) && (
-            <p className="note section">En esta ronda todos los activos quedan nominados: la puja no da inmunidad.</p>
-          )}
-        </>
+        <h2>Recompensas de la ronda</h2>
+      )}
+      <RewardsBoard results={results} players={view.players} meEmail={me.email} />
+      {mine.length > 0 && (
+        <div className="banner-outline">
+          <b>Tus fichas</b>
+          {mine.map((award, index) => (
+            <p key={`${award.reason}-${award.survivor}-${index}`}>{awardLine(award, view)}</p>
+          ))}
+        </div>
       )}
     </>
   );
@@ -498,7 +618,7 @@ function Vote({ view, me, now }: { view: PlayerView; me: PlayerInMatch; now: num
                 <td>
                   <PlayerName name={who} tokens={player?.tokens ?? 0} least={least} most={most} />
                   {` ${rankLabel(player?.rank ?? null)} · ${tokenLabel(player?.tokens ?? 0)}`}
-                  {bonusConfirmed && <span className="note">{` bono +${bonus}`}</span>}
+                  {bonusConfirmed && bonus > 0 && <span className="note">{` bonus +${bonus}`}</span>}
                 </td>
                 <td>
                   <span className="tiny">
@@ -760,7 +880,10 @@ function statusWord(view: PlayerView, me: PlayerInMatch): 'Nominado' | 'Activo' 
 
 function Status({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
   return (
-    <div className="bar">
+    <div className="bar player-status">
+      <span className="player-status-name">
+        <b>{me.name}</b>
+      </span>
       <span>
         Ranking <b>{rankLabel(me.rank ?? me.rankWhenFired)}</b>
       </span>
@@ -775,7 +898,11 @@ function Status({ view, me }: { view: PlayerView; me: PlayerInMatch }) {
 function awardLine(award: TokenAward, view: PlayerView): string {
   const who = nameOf(view.players, award.survivor);
   if (award.reason === 'survivor_reward') return `Sobreviviste: +${award.amount} fichas`;
-  if (award.reason === 'vote_refund') return `Votaste a ${who} (sobrevive): +${award.amount} fichas`;
+  if (award.reason === 'vote_refund') {
+    const extra = rulesOf(view).extraTokensForVotingASurvivor;
+    const returned = Math.max(0, award.amount - extra);
+    return `Votaste a ${who} (sobrevive): recuperás ${tokenLabel(returned)} y ${tokenLabel(extra)} de premio`;
+  }
   return `Máximo votante de ${who}: +${award.amount}`;
 }
 

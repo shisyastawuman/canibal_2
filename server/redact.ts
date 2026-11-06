@@ -17,13 +17,12 @@ export function redact(match: Match, audience: Audience): Match {
     ...match,
     facilitatorId: '',
     prompt: secret && match.phase === 'vote' ? null : match.prompt,
-    players: secret
-      ? []
-      : match.players.map((player) =>
-          audience.role === 'player' && player.email === mine ? player : { ...player, immunityBid: 0, votes: [] },
-        ),
+    players: match.players.map((player) =>
+      audience.role === 'player' && player.email === mine ? player : { ...player, immunityBid: 0, votes: [] },
+    ),
     nominees: secret ? [] : match.nominees,
     bidSpends: secret ? null : match.bidSpends,
+    voteSpends: secret ? null : match.voteSpends,
     facilitatorBonus: secret ? null : match.facilitatorBonus,
     results:
       secret || !match.results

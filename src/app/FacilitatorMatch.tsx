@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { rankingOrder, rulesOf, speakingOrder } from '../game';
 import type { Match } from '../game';
 import { assignBonus, claimFacilitator, facilitator, facilitatorId } from '../session';
@@ -54,6 +55,7 @@ function Claim({ code, onClaim }: { code: string; onClaim: (id: string) => void 
 function Console({ match, facilitatorId: id, now }: { match: Match; facilitatorId: string; now: number }) {
   const [error, setError] = useState('');
   const origin = window.location.origin;
+  const joinUrl = `${origin}/j/${match.code}`;
   const order = speakingOrder(match);
   const speaker = match.speakerIndex === null ? null : order[match.speakerIndex];
   const activeLeft = match.players.filter((player) => player.status === 'active').length;
@@ -82,7 +84,10 @@ function Console({ match, facilitatorId: id, now }: { match: Match; facilitatorI
       <label className="field" htmlFor="join">
         Link de jugadores
       </label>
-      <input id="join" type="text" readOnly value={`${origin}/j/${match.code}`} />
+      <input id="join" type="text" readOnly value={joinUrl} />
+      <div className="qr">
+        <QRCodeSVG value={joinUrl} size={196} marginSize={4} bgColor="#ffffff" fgColor="#222222" title="Código QR del link de jugadores" />
+      </div>
       <label className="field" htmlFor="pub">
         Vista pública
       </label>
@@ -100,7 +105,7 @@ function Console({ match, facilitatorId: id, now }: { match: Match; facilitatorI
             <b>Jugadores conectados ({match.players.length})</b>
           </p>
           <LobbyPlayers match={match} />
-          <p className="panel">Revelar la consigna traba el ingreso. Hacen falta entre 7 y 60 jugadores.</p>
+          <p className="panel">Revelar la consigna traba el ingreso. Hacen falta entre 3 y 60 jugadores.</p>
         </>
       )}
       {match.phase === 'speeches' && speaker && <Speaker match={match} speaker={speaker} />}
@@ -178,7 +183,12 @@ function Console({ match, facilitatorId: id, now }: { match: Match; facilitatorI
             </button>
           </>
         )}
-        {(match.phase === 'reveal_vote' || match.phase === 'round_end') && (
+        {match.phase === 'reveal_vote' && (
+          <button type="button" className="btn" onClick={() => run(facilitator.assignRewards(match.code, id))}>
+            Asignar recompensas
+          </button>
+        )}
+        {match.phase === 'round_end' && (
           <button type="button" className="btn" onClick={() => run(facilitator.advance(match.code, id))}>
             {activeLeft <= rulesOf(match).activePlayersWhoWin || isLastRound(match.rosterSize, match.round, rulesOf(match)) ? 'Ver ganadores' : 'Siguiente ronda'}
           </button>

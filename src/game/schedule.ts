@@ -1,6 +1,6 @@
 import { rewards, type Rules } from './rewards';
 
-export const MIN_PLAYERS = 7;
+export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 60;
 
 export function isValidRosterSize(p: number): boolean {

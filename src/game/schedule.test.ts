@@ -3,10 +3,10 @@ import { rewards } from './rewards';
 import { firingsPerRound, isValidRosterSize, nomineeCount, nominatesAllActive, roundCount, survivorsThisRound } from './schedule';
 
 describe('schedule (section 4.4)', () => {
-  it('accepts rosters from 7 to 60 only', () => {
+  it('accepts rosters from 3 to 60 only', () => {
     expect(isValidRosterSize(1)).toBe(false);
-    expect(isValidRosterSize(6)).toBe(false);
-    expect(isValidRosterSize(7)).toBe(true);
+    expect(isValidRosterSize(2)).toBe(false);
+    expect(isValidRosterSize(3)).toBe(true);
     expect(isValidRosterSize(60)).toBe(true);
     expect(isValidRosterSize(61)).toBe(false);
   });

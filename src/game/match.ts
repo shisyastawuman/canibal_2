@@ -42,6 +42,7 @@ export function createMatch(promptOrder: Prompt[], rng: Rng, rules: Rules = rewa
     nominees: [],
     clock: null,
     bidSpends: null,
+    voteSpends: null,
     facilitatorBonus: null,
     results: null,
     speakerIndex: null,

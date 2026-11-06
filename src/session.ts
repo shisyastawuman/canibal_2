@@ -157,6 +157,7 @@ export const facilitator = {
   startVote: (code: string, id: string) => send(code, { type: 'startVote', facilitatorId: id }, { facilitatorId: id }),
   extendVote: (code: string, id: string) => send(code, { type: 'extendVote', facilitatorId: id }, { facilitatorId: id }),
   closeVote: (code: string, id: string) => send(code, { type: 'closeVote', facilitatorId: id }, { facilitatorId: id }),
+  assignRewards: (code: string, id: string) => send(code, { type: 'assignRewards', facilitatorId: id }, { facilitatorId: id }),
   advance: (code: string, id: string) => send(code, { type: 'advance', facilitatorId: id }, { facilitatorId: id }),
 };
 

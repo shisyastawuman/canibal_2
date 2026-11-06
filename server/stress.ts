@@ -104,7 +104,11 @@ export async function runStress(baseUrl: string, players = 50): Promise<StressRe
   const pub = await getMatch(baseUrl, code, {});
   const otherVotes = (mine?.match?.players ?? []).filter((player) => player.email !== sample).some((player) => player.votes.length > 0);
   const ownVote = (mine?.match?.players ?? []).find((player) => player.email === sample)?.votes.length === 1;
-  const publicHidden = (pub.match?.players.length ?? 1) === 0 && !JSON.stringify(pub).includes(facilitatorId);
+  const publicRoster = pub.match?.players ?? [];
+  const publicHidden =
+    publicRoster.length === players &&
+    publicRoster.every((player) => player.votes.length === 0 && player.immunityBid === 0) &&
+    !JSON.stringify(pub).includes(facilitatorId);
   const secretsHidden = Boolean(sample) && ownVote && !otherVotes && publicHidden && mine?.match?.facilitatorId === '';
   if (!secretsHidden) fail('a phone could see another player’s vote or the facilitator id');
 

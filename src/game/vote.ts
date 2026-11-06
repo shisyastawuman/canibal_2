@@ -14,10 +14,9 @@ import type {
   VoteAllocation,
 } from './types';
 
-export const VOTE_CLOCK_MS = 3 * 60_000;
+export const VOTE_CLOCK_MS = 2 * 60_000;
 
 const isCount = (n: number) => Number.isInteger(n) && n >= 0;
-
 
 /** Up to 5 tokens, split freely among the nominees. An empty allocation means skipped. */
 export function assignFacilitatorBonus(match: Match, facilitatorId: string, allocation: BonusAllocation[]): Result {
@@ -124,11 +123,26 @@ export function tallyVotes(match: Match): NomineeTotal[] {
     .sort((a, b) => b.total - a.total || rankOf(a.nominee) - rankOf(b.nominee));
 }
 
+function computeAwards(match: Match, survivors: string[], voters: PlayerInMatch[]): TokenAward[] {
+  const rules = rulesOf(match);
+  const awards: TokenAward[] = [];
+  for (const survivor of survivors) {
+    awards.push({ email: survivor, amount: rules.survivorInfluenceTokens, reason: 'survivor_reward', survivor });
+    const backers = voters.filter((v) => invested(v, survivor) > 0);
+    for (const v of backers) {
+      awards.push({ email: v.email, amount: invested(v, survivor) + rules.extraTokensForVotingASurvivor, reason: 'vote_refund', survivor });
+    }
+    const top = Math.max(0, ...backers.map((v) => invested(v, survivor)));
+    for (const v of backers.filter((b) => invested(b, survivor) === top)) {
+      awards.push({ email: v.email, amount: rules.extraTokensForTopVoter, reason: 'top_voter', survivor });
+    }
+  }
+  return awards;
+}
+
 /**
- * Closes `vote` and applies section 4.6 in order: spend free tokens first and
- * drop whatever is left of them, fire everyone outside this round's survivors and compact
- * the ranking, promote survivors (lowest ranked first), then pay survivors
- * and their voters. Moves to `reveal_vote`.
+ * Closes `vote`, publishes totals / vote spends / planned awards, and clears live
+ * ballots. Does not fire players or change tokens — that happens in `assignRewards`.
  */
 export function closeVote(match: Match, now: number, facilitatorId?: string): Result {
   const check = checkClose(match, 'vote', now, facilitatorId);
@@ -145,32 +159,49 @@ export function closeVote(match: Match, now: number, facilitatorId?: string): Re
     email: p.email,
     votes: p.votes.map((v) => ({ ...v })),
     unusedFreeTokens: unusedFreeTokens(p),
+    influenceSpent: influenceSpent(p),
   }));
+  const voteSpends = match.players
+    .map((p) => ({ email: p.email, spent: influenceSpent(p) }))
+    .filter((item) => item.spent > 0);
+  const awards = computeAwards(match, survivors, voters);
+
+  return {
+    ok: true,
+    match: {
+      ...match,
+      phase: 'reveal_vote',
+      clock: null,
+      voteSpends,
+      players: match.players.map((p) => ({ ...p, votes: [], freeTokens: 0 })),
+      results: { totals, survivors, fired, awards, ballots },
+    },
+  };
+}
+
+/**
+ * Applies vote spends, firings, rank moves and awards. Moves `reveal_vote` → `round_end`.
+ */
+export function assignRewards(match: Match, facilitatorId: string): Result {
+  if (!isFacilitator(match, facilitatorId)) return { ok: false, error: 'not_facilitator' };
+  if (match.phase !== 'reveal_vote' || !match.results) return { ok: false, error: 'wrong_phase' };
+
+  const rules = rulesOf(match);
+  const { survivors, fired, awards, ballots } = match.results;
+  const spentOf = (email: string) => ballots.find((b) => b.email === email)?.influenceSpent ?? 0;
 
   let players: PlayerInMatch[] = match.players.map((p) => {
-    const spentPlayer = { ...p, tokens: p.tokens - influenceSpent(p), freeTokens: 0, votes: [] };
+    const spentPlayer = { ...p, tokens: p.tokens - spentOf(p.email), freeTokens: 0, votes: [] };
     if (!fired.includes(p.email)) return spentPlayer;
     return { ...spentPlayer, status: 'fired' as const, firedInRound: match.round, rankWhenFired: p.rank, rank: null };
   });
   players = compactRanks(players);
 
-  const byLowestRankFirst = [...survivors].sort(
-    (a, b) => (players.find((p) => p.email === b)?.rank ?? 0) - (players.find((p) => p.email === a)?.rank ?? 0),
+  const byHighestRankFirst = [...survivors].sort(
+    (a, b) => (players.find((p) => p.email === a)?.rank ?? 0) - (players.find((p) => p.email === b)?.rank ?? 0),
   );
-  for (const survivor of byLowestRankFirst) players = moveUp(players, survivor, rules.survivorRankPlaces);
+  for (const survivor of byHighestRankFirst) players = moveUp(players, survivor, rules.survivorRankPlaces);
 
-  const awards: TokenAward[] = [];
-  for (const survivor of survivors) {
-    awards.push({ email: survivor, amount: rules.survivorInfluenceTokens, reason: 'survivor_reward', survivor });
-    const backers = voters.filter((v) => invested(v, survivor) > 0);
-    for (const v of backers) {
-      awards.push({ email: v.email, amount: invested(v, survivor) + rules.extraTokensForVotingASurvivor, reason: 'vote_refund', survivor });
-    }
-    const top = Math.max(0, ...backers.map((v) => invested(v, survivor)));
-    for (const v of backers.filter((b) => invested(b, survivor) === top)) {
-      awards.push({ email: v.email, amount: rules.extraTokensForTopVoter, reason: 'top_voter', survivor });
-    }
-  }
   players = players.map((p) => ({
     ...p,
     tokens: p.tokens + awards.filter((a) => a.email === p.email).reduce((sum, a) => sum + a.amount, 0),
@@ -180,10 +211,8 @@ export function closeVote(match: Match, now: number, facilitatorId?: string): Re
     ok: true,
     match: {
       ...match,
-      phase: 'reveal_vote',
-      clock: null,
+      phase: 'round_end',
       players,
-      results: { totals, survivors, fired, awards, ballots },
     },
   };
 }

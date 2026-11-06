@@ -6,7 +6,7 @@ const ERRORS: Record<GameError, string> = {
   wrong_phase: 'Esa acción no corresponde a esta fase.',
   invalid_registration: 'Ingresá un nombre y un email.',
   roster_locked: 'La partida ya comenzó. No se aceptan nuevos jugadores.',
-  roster_size: 'Hacen falta entre 7 y 60 jugadores.',
+  roster_size: 'Hacen falta entre 3 y 60 jugadores.',
   not_enough_prompts: 'Faltan consignas para la cantidad de rondas.',
   invalid_rules: 'Esos números no sirven para una partida.',
   unknown_player: 'Ese email no está en la partida.',
@@ -48,7 +48,7 @@ const PHASES: Record<Phase, string> = {
   facilitator_bonus: 'Bono',
   vote: 'Votación',
   reveal_vote: 'Resultados',
-  round_end: 'Resultados',
+  round_end: 'Recompensas',
   victory: 'Fin de la partida',
 };
 
@@ -115,4 +115,16 @@ export function tokenBounds(counts: readonly number[]): { least: number; most: n
 export function tokenWealth(tokens: number, least: number, most: number): number | null {
   if (most <= least) return null;
   return (tokens - least) / (most - least);
+}
+
+/** Soft row wash: gray at 0, light→dark green by wealth; strength is alpha only. */
+export function rosterRowWash(tokens: number, least: number, most: number): string | undefined {
+  if (tokens <= 0) return 'rgba(158, 158, 158, 0.2)';
+  const wealth = tokenWealth(tokens, least, most);
+  if (wealth === null) return undefined;
+  const r = Math.round(200 + (27 - 200) * wealth);
+  const g = Math.round(230 + (94 - 230) * wealth);
+  const b = Math.round(201 + (32 - 201) * wealth);
+  const a = 0.12 + wealth * 0.3;
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
 }

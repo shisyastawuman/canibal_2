@@ -71,6 +71,8 @@ export interface Ballot {
   votes: VoteAllocation[];
   /** Free tokens this player was given and did not put on a nominee. */
   unusedFreeTokens: number;
+  /** Influence tokens that will be deducted when rewards are assigned. */
+  influenceSpent: number;
 }
 
 export interface VoteResults {
@@ -118,11 +120,13 @@ export interface Match {
   clock: Clock | null;
   /** What every active player spent, published on `reveal_bid`. */
   bidSpends: BidSpend[] | null;
+  /** Total tokens each voter placed, published on `reveal_vote` (no targets). */
+  voteSpends: BidSpend[] | null;
   /** Null when absent or skipped. Public as soon as it is assigned. */
   facilitatorBonus: BonusAllocation[] | null;
-  /** Published on `reveal_vote`. */
+  /** Published on `reveal_vote` (outcomes computed; applied on `assignRewards`). */
   results: VoteResults | null;
-  /** Whose turn it is during `speeches`: index into the low-rank-first order. */
+  /** Whose turn it is during `speeches`: index into speakingOrder. */
   speakerIndex: number | null;
   /** Set on `victory`: the two remaining active players, then the fired winners. */
   winners: Winner[] | null;

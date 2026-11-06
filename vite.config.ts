@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -5,6 +6,14 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   server: {
     proxy: { '/api': 'http://127.0.0.1:8080' },
+  },
+  build: {
+    rollupOptions: {
+      input: {
+        main: resolve(import.meta.dirname, 'index.html'),
+        animLab: resolve(import.meta.dirname, 'anim-lab.html'),
+      },
+    },
   },
   plugins: [
     react(),

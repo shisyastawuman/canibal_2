@@ -2,16 +2,18 @@ import { checkClose, extendClock } from './clock';
 import { isFacilitator } from './match';
 import type { Match, Result } from './types';
 
-export const PREP_CLOCK_MS = 30_000;
-export const SPEECH_CLOCK_MS = 60_000;
+export const PREP_CLOCK_MS = 10_000;
+export const SPEECH_CLOCK_MS = 50_000;
 
-/** Nominees from the worst rank (highest number) toward #1. */
+/** Lowest bid first; ties go to the worse rank (higher number). */
 export function speakingOrder(match: {
   nominees: readonly string[];
   players: readonly { email: string; rank: number | null }[];
+  bidSpends?: readonly { email: string; spent: number }[] | null | undefined;
 }): string[] {
+  const spentOf = (email: string) => match.bidSpends?.find((item) => item.email === email)?.spent ?? 0;
   const rankOf = (email: string) => match.players.find((p) => p.email === email)?.rank ?? 0;
-  return [...match.nominees].sort((a, b) => rankOf(b) - rankOf(a));
+  return [...match.nominees].sort((a, b) => spentOf(a) - spentOf(b) || rankOf(b) - rankOf(a));
 }
 
 /** Nominees from #1 toward the worst rank. A fired nominee keeps the rank they had. */

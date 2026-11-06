@@ -68,7 +68,7 @@ The training session requires a minimum of 7 players and a maximum of 60 players
 - Moving up or down the rank means having your number decrease or increase, being #1 the top.
 - Players whose rank gets taken by another player are demoted or promoted accordingly.
 - A move up is capped at #1. The player’s number decreases by up to 2, and each player they pass increases by 1.
-- When several rewarded survivors move up in the same reveal, the lowest ranked (highest number) is promoted first, then the next, and so on toward #1.
+- When several rewarded survivors move up in the same reveal, the highest ranked (lowest number) is promoted first, then the next, and so on toward the lowest rank.
 - The ranking is compacted upon player elimination. Fired players lose their rank.
 
 ### 4.4 Phase 1 — who gets nominated
@@ -103,7 +103,7 @@ A 7-player match nominates 3 and fires 1 on each of 5 rounds. A 60-player match 
 3. Every player (even fired, but not the nominees) has **3 minutes** to spend tokens voting for the nominees. They may put more than one token on the same nominee. During those 3 minutes the allocation can be changed. At 3 minutes, the selected amount is spent on the corresponding nominees.
 4. The totals are revealed. Those totals decide who leaves and who is saved. Each nominee's total adds, at equal value, the influence tokens voted, the special tokens voted, and the facilitator bonus.
 5. The **top 2 nominees** survive and are rewarded. **Every other nominee is fired.** Ties for a reward place are broken in favor of the highest ranks (lower numbers). Ties for a firing place are broken against the lowest ranks (higher numbers). Fired players retain their permanent tokens and lose their rank.
-6. Each rewarded survivor moves up 2 rank places and gains 3 influence tokens. The lowest ranked survivor is promoted first, then the other.
+6. Each rewarded survivor moves up 2 rank places and gains 3 influence tokens. The highest ranked survivor (#1 before #2) is promoted first, then the other.
 7. Anyone who voted for a survivor **gets back the tokens they invested in that survivor and gains 2 extra**, all as permanent tokens. This is for each survivor they voted.
 8. The **highest voter for each surviving nominee** gains **1 extra token**. If several players tie for that place, each of them gains 1 token.
 

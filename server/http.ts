@@ -154,6 +154,7 @@ function parseCommand(body: unknown): Command | null {
     case 'startVote':
     case 'extendVote':
     case 'closeVote':
+    case 'assignRewards':
     case 'advance':
       if (!facilitatorId) return null;
       return { type: body.type, facilitatorId };

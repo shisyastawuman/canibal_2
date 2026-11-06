@@ -4,7 +4,7 @@ import { rulesOf } from './rewards';
 import { nomineeCount } from './schedule';
 import type { BidSpend, Match, PlayerInMatch, Result } from './types';
 
-export const BID_CLOCK_MS = 3 * 60_000;
+export const BID_CLOCK_MS = 2 * 60_000;
 
 /** Facilitator starts the 3:00 clock; this opens `immunity_bid`. */
 export function startBidClock(match: Match, facilitatorId: string, now: number): Result {

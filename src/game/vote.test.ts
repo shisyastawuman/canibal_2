@@ -88,12 +88,14 @@ describe('done when: a 7-player round from start to firing', () => {
     ]);
     expect(match.results?.survivors).toEqual(['p5@x.com', 'p6@x.com']);
     expect(match.results?.fired).toEqual(['p7@x.com']);
+    expect(findPlayer(match, 'p7@x.com')).toMatchObject({ status: 'active', rank: 7 });
 
+    match = ok(endRound(match, f));
+    expect(match.phase).toBe('round_end');
     const p7 = findPlayer(match, 'p7@x.com')!;
     expect(p7).toMatchObject({ status: 'fired', rank: null, tokens: 5, firedInRound: 1, rankWhenFired: 7 });
 
     // Next round: p7 cannot bid or be nominated, but votes with 3 free tokens.
-    match = ok(endRound(match, f));
     match = ok(startNextRound(match, f));
     expect(match.round).toBe(2);
     match = ok(startBidClock(match, f, T0));
@@ -121,13 +123,14 @@ describe('reveal_vote rewards (section 4.6)', () => {
     match = ok(setVote(match, 'p1@x.com', [{ nominee: 'p5@x.com', tokens: 3 }], T1));
     match = ok(setVote(match, 'p2@x.com', [{ nominee: 'p6@x.com', tokens: 2 }], T1));
     match = ok(setVote(match, 'p3@x.com', [{ nominee: 'p5@x.com', tokens: 1 }], T1));
-    return ok(closeVote(match, AFTER_VOTE));
+    match = ok(closeVote(match, AFTER_VOTE));
+    return ok(endRound(match, f));
   }
 
-  it('compacts after firing, then promotes the lower-ranked survivor first', () => {
+  it('compacts after firing, then promotes the higher-ranked survivor first', () => {
     const match = revealed();
-    // After compaction p6 is #6 and moves to #4; then p5 (pushed to #6) moves to #4.
-    expect(['p1', 'p2', 'p3', 'p4', 'p5', 'p6'].map((p) => rank(match, `${p}@x.com`))).toEqual([1, 2, 3, 6, 4, 5]);
+    // After compaction p5 is #5 and moves to #3; then p6 moves from #6 to #4.
+    expect(['p1', 'p2', 'p3', 'p4', 'p5', 'p6'].map((p) => rank(match, `${p}@x.com`))).toEqual([1, 2, 5, 6, 3, 4]);
   });
 
   it('survivors gain 3; voters get back what they invested + 2; each top voter gains 1', () => {
@@ -240,9 +243,14 @@ describe('vote (US-4.2 – US-4.5)', () => {
     match = ok(setVote(match, 'p3@x.com', [{ nominee: 'p6@x.com', tokens: 3 }], T1));
     match = ok(closeVote(match, AFTER_VOTE));
     expect(match.results?.fired).toEqual(['p7@x.com']);
-    expect(tokens(match, 'p1@x.com')).toBe(3);
-    expect(match.results?.ballots.find((ballot) => ballot.email === 'p1@x.com')?.unusedFreeTokens).toBe(0);
+    expect(tokens(match, 'p1@x.com')).toBe(4);
+    expect(match.results?.ballots.find((ballot) => ballot.email === 'p1@x.com')).toMatchObject({
+      unusedFreeTokens: 0,
+      influenceSpent: 1,
+    });
     expect(match.results?.ballots.find((ballot) => ballot.email === 'p4@x.com')?.unusedFreeTokens).toBe(1);
+    match = ok(endRound(match, match.facilitatorId));
+    expect(tokens(match, 'p1@x.com')).toBe(3);
   });
 
   it('closes on its own at the deadline; only the facilitator closes early or adds 30 s', () => {
@@ -287,6 +295,8 @@ describe('closing round', () => {
     match = ok(closeVote(match, AFTER_VOTE));
     expect(match.results?.survivors).toHaveLength(2);
     expect(match.results?.fired).toHaveLength(1);
+    expect(match.players.filter((player) => player.status === 'active')).toHaveLength(3);
+    match = ok(endRound(match, match.facilitatorId));
     expect(match.players.filter((player) => player.status === 'active')).toHaveLength(2);
   });
 });

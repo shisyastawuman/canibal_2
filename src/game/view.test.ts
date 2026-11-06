@@ -26,14 +26,14 @@ describe('public view (US-1.4, US-2.5, US-4.7)', () => {
     expect(JSON.stringify(view)).not.toContain(lobby().facilitatorId);
   });
 
-  it('during the bid and the vote, publishes only the clock and the phase instructions', () => {
+  it('during the bid and the vote, keeps the roster and hides the selections', () => {
     const match = ok(revealFirstPrompt(lobby(), lobby().facilitatorId));
     const bidding = ok(startBidClock(match, match.facilitatorId, 1_000));
     const bidView = viewForPublic(bidding);
     expect(bidView.clock?.deadline).toBe(1_000 + BID_CLOCK_MS);
     expect(bidView.prompt?.text).toBe('Consigna 1');
     expect(bidView.instructions).toMatch(/Puja/);
-    expect(bidView.players).toBeNull();
+    expect(bidView.players).toHaveLength(7);
     expect(bidView.bidSpends).toBeNull();
     expect(JSON.stringify(bidView)).not.toContain('immunityBid');
 
@@ -45,11 +45,14 @@ describe('public view (US-1.4, US-2.5, US-4.7)', () => {
 
     const voting = ok(startVoteClock({ ...revealed, phase: 'facilitator_bonus' }, revealed.facilitatorId, 5_000));
     const voteView = viewForPublic(voting);
-    expect(voteView.players).toBeNull();
+    expect(voteView.players).toHaveLength(7);
     expect(voteView.prompt).toBeNull();
     expect(voteView.instructions).toMatch(/Votación/);
     expect(voteView.clock?.deadline).toBe(5_000 + VOTE_CLOCK_MS);
-    expect(JSON.stringify(voteView)).not.toContain('p1@x.com');
+    expect(voteView.nominees).toBeNull();
+    expect(voteView.voteSpends).toBeNull();
+    expect(voteView.results).toBeNull();
+    expect(JSON.stringify(voteView.players)).not.toContain('votes');
 
     const results = viewForPublic(ok(closeVote(voting, 5_000 + VOTE_CLOCK_MS)));
     expect(results.results?.totals).toHaveLength(3);
@@ -70,7 +73,9 @@ describe('public view (US-1.4, US-2.5, US-4.7)', () => {
     match = ok(closeVote(match, 5_000 + VOTE_CLOCK_MS));
 
     const mine = viewForPlayer(match, voter.email);
-    expect(mine.results?.ballots).toEqual([{ email: voter.email, votes: [{ nominee, tokens: 2 }], unusedFreeTokens: 0 }]);
+    expect(mine.results?.ballots).toEqual([
+      { email: voter.email, votes: [{ nominee, tokens: 2 }], unusedFreeTokens: 0, influenceSpent: 1 },
+    ]);
     const other = match.players.find((p) => p.email !== voter.email);
     const otherView = viewForPlayer(match, other?.email ?? '');
     expect(otherView.results?.ballots.every((b) => b.email === other?.email)).toBe(true);

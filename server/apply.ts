@@ -1,10 +1,10 @@
 import {
   assignFacilitatorBonus,
+  assignRewards,
   closeImmunityBid,
   closePrep,
   closeSpeech,
   closeVote,
-  endRound,
   extendBidClock,
   extendPrepClock,
   extendSpeechClock,
@@ -42,6 +42,7 @@ export type Command =
         | 'startVote'
         | 'extendVote'
         | 'closeVote'
+        | 'assignRewards'
         | 'advance';
       facilitatorId: string;
     };
@@ -85,13 +86,9 @@ export function applyCommand(match: Match, command: Command, now: number, rng: R
       return extendVoteClock(match, command.facilitatorId, now);
     case 'closeVote':
       return closeVote(match, now, command.facilitatorId);
+    case 'assignRewards':
+      return assignRewards(match, command.facilitatorId);
     case 'advance':
-      return advance(match, command.facilitatorId);
+      return startNextRound(match, command.facilitatorId);
   }
-}
-
-function advance(match: Match, facilitatorId: string): Result {
-  const ended = match.phase === 'reveal_vote' ? endRound(match, facilitatorId) : { ok: true as const, match };
-  if (!ended.ok) return ended;
-  return startNextRound(ended.match, facilitatorId);
 }

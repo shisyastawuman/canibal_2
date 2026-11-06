@@ -42,9 +42,10 @@ export interface PublicView {
   prompt: Prompt | null;
   clock: Clock | null;
   instructions: string | null;
-  players: PublicPlayer[] | null;
+  players: PublicPlayer[];
   nominees: string[] | null;
   bidSpends: BidSpend[] | null;
+  voteSpends: BidSpend[] | null;
   facilitatorBonus: BonusAllocation[] | null;
   results: PublicResults | null;
   winners: Winner[] | null;
@@ -67,9 +68,9 @@ function publicPlayers(match: Match): PublicPlayer[] {
 }
 
 /**
- * Outside a secret phase the room screen gets the ranking, the prompt and the
- * published results. During `immunity_bid` and `vote` it gets only the clock
- * and the instructions for that phase.
+ * The room screen always gets the roster. During `immunity_bid` and `vote` it
+ * still gets the clock and the instructions for that phase, but not the bids,
+ * the votes, or the published results.
  */
 export function viewForPublic(match: Match): PublicView {
   const secret = match.phase === 'immunity_bid' || match.phase === 'vote';
@@ -81,9 +82,10 @@ export function viewForPublic(match: Match): PublicView {
       prompt: match.phase === 'immunity_bid' ? match.prompt : null,
       clock: match.clock,
       instructions: match.phase === 'immunity_bid' ? BID_INSTRUCTIONS : VOTE_INSTRUCTIONS,
-      players: null,
+      players: publicPlayers(match),
       nominees: null,
       bidSpends: null,
+      voteSpends: null,
       facilitatorBonus: null,
       results: null,
       winners: null,
@@ -103,6 +105,7 @@ export function viewForPublic(match: Match): PublicView {
     players: publicPlayers(match),
     nominees: match.nominees,
     bidSpends: match.bidSpends,
+    voteSpends: match.voteSpends,
     facilitatorBonus: match.facilitatorBonus,
     results: match.results ? results : null,
     winners: match.winners,

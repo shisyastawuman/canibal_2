@@ -2,12 +2,12 @@ import { isFacilitator } from './match';
 import { rulesOf } from './rewards';
 import { roundCount } from './schedule';
 import type { Match, Result } from './types';
+import { assignRewards } from './vote';
 import { declareVictory } from './victory';
 
+/** Applies vote resolution and moves to `round_end`. Prefer `assignRewards`. */
 export function endRound(match: Match, facilitatorId: string): Result {
-  if (!isFacilitator(match, facilitatorId)) return { ok: false, error: 'not_facilitator' };
-  if (match.phase !== 'reveal_vote') return { ok: false, error: 'wrong_phase' };
-  return { ok: true, match: { ...match, phase: 'round_end' } };
+  return assignRewards(match, facilitatorId);
 }
 
 /**
@@ -33,6 +33,7 @@ export function startNextRound(match: Match, facilitatorId: string): Result {
       prompt: match.promptOrder[match.round] ?? null,
       nominees: [],
       bidSpends: null,
+      voteSpends: null,
       facilitatorBonus: null,
       results: null,
       speakerIndex: null,

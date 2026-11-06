@@ -1,7 +1,11 @@
 import { rankingOrder, rulesOf, speakingOrder, viewForPublic } from '../game';
 import type { PublicPlayer, PublicView } from '../game';
+import { ActivePlayersList } from './ActivePlayersList';
 import { Header, Missing, PlayerName } from './chrome';
+import { FiredPlayersList } from './FiredPlayersList';
 import { nameOf, phaseName, rankLabel, roundChip, tokenBounds, tokenLabel } from './format';
+import { RewardsBoard, SpeakingQueue, VoteRevealBoard } from './NomineeBoard';
+import { awardDeltas, playersBeforeDeltas, spendDeltas } from './rosterDeltas';
 import { useNow, useSession } from './useSession';
 
 export function PublicMatch({ code }: { code: string }) {
@@ -13,25 +17,62 @@ export function PublicMatch({ code }: { code: string }) {
   const view = viewForPublic(match);
   const chip = roundChip(view.phase, view.round, view.rosterSize, rulesOf(match));
   const secret = view.phase === 'immunity_bid' || view.phase === 'vote';
+  const players = view.players;
+  const nomineeSet = view.phase === 'reveal_bid' || view.phase === 'reveal_vote' ? (view.nominees ?? []) : [];
+  const activeDeltas =
+    view.phase === 'reveal_bid'
+      ? spendDeltas(view.bidSpends, '-')
+      : view.phase === 'reveal_vote'
+        ? spendDeltas(view.voteSpends, '-')
+        : view.phase === 'round_end'
+          ? awardDeltas(view.results?.awards)
+          : undefined;
+  const firedDeltas =
+    view.phase === 'reveal_vote'
+      ? spendDeltas(view.voteSpends, '-')
+      : view.phase === 'round_end'
+        ? awardDeltas(view.results?.awards)
+        : undefined;
+  // Bid/award tokens are already post-delta in match state; peel so the lists can re-apply for display.
+  const alreadyApplied = view.phase === 'reveal_bid' || view.phase === 'round_end';
+  const activePlayers = alreadyApplied ? playersBeforeDeltas(players, activeDeltas) : players;
+  const firedPlayers = alreadyApplied ? playersBeforeDeltas(players, firedDeltas) : players;
 
-  if (secret) {
-    const total = view.clock ? Math.max(0, Math.ceil((view.clock.deadline - now) / 1000)) : 0;
-    return (
-      <>
-        <Header chip={chip} />
-        {view.clock && <p className="clock">{`${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`}</p>}
-        {view.prompt && (
-          <div className="prompt">
-            <p>{view.prompt.text}</p>
-          </div>
-        )}
-        <p className="panel">{view.instructions}</p>
-      </>
-    );
-  }
+  return (
+    <div className="public-shell">
+      <Header chip={chip} />
+      <div className="public-layout">
+        <aside className="public-side">
+          <h2>Activos</h2>
+          <ActivePlayersList players={activePlayers} deltaByEmail={activeDeltas} highlightEmails={nomineeSet} />
+        </aside>
+        <main className="public-main">{secret ? <SecretPhase view={view} now={now} /> : <OpenPhase view={view} now={now} players={players} />}</main>
+        <aside className="public-side">
+          <h2>Despedidos</h2>
+          <FiredPlayersList players={firedPlayers} deltaByEmail={firedDeltas} />
+        </aside>
+      </div>
+    </div>
+  );
+}
 
-  const players = view.players ?? [];
-  const speaking = speakingOrder({ nominees: view.nominees ?? [], players });
+function SecretPhase({ view, now }: { view: PublicView; now: number }) {
+  const total = view.clock ? Math.max(0, Math.ceil((view.clock.deadline - now) / 1000)) : 0;
+  return (
+    <>
+      {view.clock && <p className="clock">{`${Math.floor(total / 60)}:${(total % 60).toString().padStart(2, '0')}`}</p>}
+      {view.prompt && (
+        <div className="prompt">
+          <p>{view.prompt.text}</p>
+        </div>
+      )}
+      <p className="panel">{view.instructions}</p>
+    </>
+  );
+}
+
+function OpenPhase({ view, now, players }: { view: PublicView; now: number; players: PublicPlayer[] }) {
+  const speaking = speakingOrder({ nominees: view.nominees ?? [], players, bidSpends: view.bidSpends });
   const rankedNominees = rankingOrder({ nominees: view.nominees ?? [], players });
   const speaker = view.phase === 'speeches' ? speaking[view.speakerIndex ?? 0] : undefined;
   const nomineeBounds = tokenBounds(rankedNominees.map((email) => players.find((player) => player.email === email)?.tokens ?? 0));
@@ -39,11 +80,47 @@ export function PublicMatch({ code }: { code: string }) {
   const showRoster =
     rankedNominees.length > 0 &&
     !view.results &&
-    (view.phase === 'reveal_bid' || view.phase === 'prep' || view.phase === 'speeches' || view.phase === 'facilitator_bonus');
+    (view.phase === 'prep' || view.phase === 'speeches' || view.phase === 'facilitator_bonus');
+
+  if (view.phase === 'reveal_bid') {
+    return (
+      <>
+        {view.prompt && (
+          <>
+            <p className="kicker">CONSIGNA</p>
+            <div className="prompt">
+              <p>{view.prompt.text}</p>
+            </div>
+          </>
+        )}
+        <SpeakingQueue nominees={view.nominees ?? []} players={players} bidSpends={view.bidSpends} />
+        <p className="note">Fase: {phaseName(view.phase)}</p>
+      </>
+    );
+  }
+
+  if (view.phase === 'reveal_vote' && view.results) {
+    return (
+      <>
+        <h2>Resultados de la votación</h2>
+        <VoteRevealBoard nominees={view.nominees ?? []} players={players} bidSpends={view.bidSpends} results={view.results} />
+        <p className="note">Fase: {phaseName(view.phase)}</p>
+      </>
+    );
+  }
+
+  if (view.phase === 'round_end' && view.results) {
+    return (
+      <>
+        <h2>Recompensas</h2>
+        <RewardsBoard results={view.results} players={players} />
+        <p className="note">Fase: {phaseName(view.phase)}</p>
+      </>
+    );
+  }
 
   return (
     <>
-      <Header chip={chip} />
       {view.phase === 'lobby' && (
         <>
           <h2>Jugadores conectados ({players.length})</h2>
@@ -87,7 +164,7 @@ export function PublicMatch({ code }: { code: string }) {
           </p>
           {bonusConfirmed && view.facilitatorBonus?.length === 0 && <p className="note block">El facilitador no asignó bono esta ronda.</p>}
           <ul className="people">
-            {rankedNominees.map((email) => {
+            {speaking.map((email) => {
               const player = players.find((item) => item.email === email);
               const bonus = view.facilitatorBonus?.find((item) => item.nominee === email)?.tokens ?? 0;
               return (
@@ -99,18 +176,6 @@ export function PublicMatch({ code }: { code: string }) {
               );
             })}
           </ul>
-        </>
-      )}
-      {view.bidSpends && (
-        <Spends view={view} players={players} />
-      )}
-      {view.results && (
-        <>
-          <Results view={view} players={players} />
-          <p className="block">
-            <b>Ranking</b>
-          </p>
-          <People players={players.filter((player) => player.status === 'active').sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0))} />
         </>
       )}
       {view.phase === 'victory' && view.winners && (
@@ -135,80 +200,6 @@ function People({ players }: { players: PublicPlayer[] }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function Spends({ view, players }: { view: PublicView; players: PublicPlayer[] }) {
-  const rows = (view.bidSpends ?? []).map((spend) => {
-    const player = players.find((item) => item.email === spend.email);
-    return { ...spend, name: player?.name ?? spend.email, tokens: player?.tokens ?? 0 };
-  });
-  const { least, most } = tokenBounds(rows.map((row) => row.tokens));
-  return (
-    <>
-      <p className="block">
-        <b>Pujas</b>
-      </p>
-      <table className="grid">
-        <tbody>
-          {rows.map((spend) => (
-            <tr key={spend.email}>
-              <td>
-                <PlayerName name={spend.name} tokens={spend.tokens} least={least} most={most} />
-                {` · ${tokenLabel(spend.tokens)}`}
-              </td>
-              <td>{spend.spent}</td>
-              <td>{view.nominees?.includes(spend.email) ? <b>Nominado</b> : 'A salvo'}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
-  );
-}
-
-function Results({ view, players }: { view: PublicView; players: PublicPlayer[] }) {
-  const totals = rankingOrder({
-    nominees: view.results?.totals.map((total) => total.nominee) ?? [],
-    players,
-  }).flatMap((email) => {
-    const total = view.results?.totals.find((item) => item.nominee === email);
-    return total ? [total] : [];
-  });
-  const listed = totals.map((total) => players.find((player) => player.email === total.nominee));
-  const { least, most } = tokenBounds(listed.map((player) => player?.tokens ?? 0));
-  return (
-    <table className="grid">
-      <thead>
-        <tr>
-          <th>Nominado</th>
-          <th>Votos</th>
-          <th>Bono</th>
-          <th>Total</th>
-          <th />
-        </tr>
-      </thead>
-      <tbody>
-        {totals.map((total) => {
-          const player = players.find((item) => item.email === total.nominee);
-          const votes = total.tokens;
-          return (
-            <tr key={total.nominee}>
-              <td>
-                <PlayerName name={player?.name ?? total.nominee} tokens={player?.tokens ?? 0} least={least} most={most} />
-                {` · ${rankLabel(player?.rank ?? player?.rankWhenFired ?? null)} · ${tokenLabel(player?.tokens ?? 0)}`}
-              </td>
-              <td>{votes}</td>
-              <td>{total.bonus > 0 ? <b>+{total.bonus}</b> : 0}</td>
-              <td>
-                <b>{total.total}</b>
-              </td>
-              <td>{view.results?.survivors.includes(total.nominee) ? <b>Sobrevive</b> : 'Despedido'}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
   );
 }
 

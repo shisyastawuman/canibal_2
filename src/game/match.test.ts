@@ -82,8 +82,8 @@ describe('joinMatch (US-1.1, US-1.2)', () => {
 });
 
 describe('revealFirstPrompt (US-1.3)', () => {
-  it('cannot start with fewer than two players, nor with fewer than seven', () => {
-    for (const count of [0, 1, 2, 6]) {
+  it('cannot start with fewer than three players', () => {
+    for (const count of [0, 1, 2]) {
       const match = withPlayers(count);
       expect(revealFirstPrompt(match, match.facilitatorId)).toEqual({ ok: false, error: 'roster_size' });
     }

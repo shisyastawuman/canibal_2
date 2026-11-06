@@ -29,7 +29,7 @@ function revealed(): Match {
 }
 
 describe('spoken prompt (US-3.1 – US-3.3)', () => {
-  it('prepares for 30s, then speaks from the worst rank toward #1, one strict minute each', () => {
+  it('prepares for 30s, then speaks lowest bid first (ties: worst rank), one strict minute each', () => {
     let match = revealed();
     const f = match.facilitatorId;
     match = ok(startBidClock(match, f, T0));
@@ -50,7 +50,8 @@ describe('spoken prompt (US-3.1 – US-3.3)', () => {
 
     match = ok(closePrep(match, T0 + PREP_CLOCK_MS));
     expect(match.phase).toBe('speeches');
-    expect(speakingOrder(match)).toEqual(['p7@x.com', 'p6@x.com', 'p1@x.com']);
+    // Lowest bid first; among 0-bids, worse rank (p7) before better rank (p1).
+    expect(speakingOrder(match)).toEqual(['p7@x.com', 'p1@x.com', 'p6@x.com']);
     expect(rankingOrder(match)).toEqual(['p1@x.com', 'p6@x.com', 'p7@x.com']);
     expect(match.speakerIndex).toBe(0);
 
